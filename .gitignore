@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+output/
+*.egg-info/
+dist/
+build/
+.env
+*.db
+%SystemDrive%/
+other/
+*.zip
