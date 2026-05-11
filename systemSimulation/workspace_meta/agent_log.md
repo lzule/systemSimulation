@@ -12,6 +12,24 @@
 
 ---
 
+## 2026-04-25 Config Editor UI 改进 + 运动模式可扩展性设计
+
+**Agent**: Claude Code
+**操作类型**: 修改
+**涉及文件**:
+- 修改: config.py（`motion_type: str` → `Literal[...]`，新增 `MOTION_MODE_PARAMS` 注册表）
+- 修改: tools/config_editor.py（清理未使用 import、修复 ENTITY_GROUPS 闭合括号、补齐全量 FIELD_META 50 个参数描述、motion_type 下拉联动参数显隐）
+- 修改: entities/target/README.md（motion_type 类型更新、补齐 waypoints 参数、更新扩展点说明为注册表模式）
+- 修改: README.md（config.py 描述增加 MOTION_MODE_PARAMS、维护约定增加运动模式扩展指引）
+**变更说明**:
+- `motion_type` 从 `str` 改为 `Literal["sinusoidal", "constant_velocity", "constant_accel", "random_walk", "waypoint"]`，Config Editor 自动生成下拉框
+- 新增 `MOTION_MODE_PARAMS` 注册表（config.py 模块级常量），定义每种模式的专属参数字段
+- Config Editor 切换 motion_type 下拉框时，自动隐藏不属于当前模式的参数（公共字段 motion_type/initial_x_m/initial_y_m 始终显示）
+- 补齐全部 50 个配置参数的三级描述（一句话说明 + 取值建议 + 影响范围）
+- 清理 10 个未使用 import（QPropertyAnimation, QEasingCurve, pyqtProperty, QColor, QPainter, QBrush, QPen, QGraphicsOpacityEffect, QSizePolicy, QToolButton）
+**影响范围**: config.py 向后兼容（Literal 字符串值不变）；Config Editor UI 行为变化（按模式过滤参数）
+**验证方式**: py_compile 通过 + 运行启动无报错 + Literal 与 MOTION_MODE_PARAMS 模式名对齐验证通过
+
 ## 2026-04-24 清理旧链路 + 重设计 Config Editor
 
 **Agent**: Claude Code

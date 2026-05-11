@@ -434,7 +434,7 @@ python app.py --delay-ms 20                      # 带 20ms 延时
 ```
 zoom_pid/
 ├─ app.py                          # 主入口（透传到 simulation.cli）
-├─ config.py                       # 统一配置（*_cfg dataclass 单例）
+├─ config.py                       # 统一配置（*_cfg dataclass 单例 + MOTION_MODE_PARAMS 模式注册表）
 ├─ simulation/                     # 应用编排层
 │  ├─ bootstrap.py                 # build_runtime / start_stack / load_control_program
 │  ├─ state_buffer.py              # UI 线程安全缓冲
@@ -475,5 +475,6 @@ zoom_pid/
 
 - 新功能优先落在 `entities/*` 与 `runtime/*`
 - `config.py` 仅保留主线配置，旧链路配置已清除
+- 添加新运动模式：在 `motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics2D` 实现。Config Editor 自动读取。
 - 每次迭代必须更新 `workspace_meta/plan_logs/latest_plan.md` 与 `history.md`
 - 修改实体代码时，同步更新对应实体的 README.md

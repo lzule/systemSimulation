@@ -90,7 +90,7 @@ class RaspiDelayConfig:
 
 @dataclass
 class TargetConfig:
-    motion_type: str = "sinusoidal"
+    motion_type: Literal["sinusoidal", "constant_velocity", "constant_accel", "random_walk", "waypoint"] = "sinusoidal"
     initial_x_m: float = 100.0
     initial_y_m: float = 0.0
 
@@ -109,6 +109,17 @@ class TargetConfig:
 
     waypoints: list[tuple[float, float, float]] = None  # [(x, y, speed), ...], speed=0 表示悬停
     waypoint_arrival_radius_m: float = 1.0
+
+
+# 模式 → 该模式专属参数字段（initial_x_m/initial_y_m 为公共字段，不在此列）
+# 添加新运动模式：1) 在 Literal 中加模式名  2) 在此加字段映射  3) 在 TargetKinematics2D 实现逻辑
+MOTION_MODE_PARAMS: dict[str, list[str]] = {
+    "sinusoidal": ["sin_amplitude_m", "sin_frequency_hz"],
+    "constant_velocity": ["velocity_x_mps", "velocity_y_mps"],
+    "constant_accel": ["velocity_x_mps", "velocity_y_mps", "accel_x_mps2", "accel_y_mps2"],
+    "random_walk": ["random_max_accel_mps2", "random_damping", "random_seed"],
+    "waypoint": ["waypoints", "waypoint_arrival_radius_m"],
+}
 
 
 @dataclass

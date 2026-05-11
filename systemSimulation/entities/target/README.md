@@ -15,7 +15,7 @@ Target 代表被跟踪目标在世界坐标系中的运动。它是**只读的�
 ```
 entities/target/
 ├─ entity.py      # TargetEntity + TargetState
-├─ model.py       # TargetKinematics2D（4 种运动模式）
+├─ model.py       # TargetKinematics2D（5 种运动模式）
 ├─ control.py     # PassiveTargetController（空占位，统一目录结构）
 ├─ client.py      # TargetClient（仅 get_state，无命令提交）
 └─ tests/
@@ -32,24 +32,26 @@ entities/target/
 
 | 参数 | 类型 | 默认值 | 含义 |
 |------|------|--------|------|
-| `motion_type` | str | `"sinusoidal"` | 运动模式，可选值见下 |
+| `motion_type` | `Literal["sinusoidal", "constant_velocity", "constant_accel", "random_walk", "waypoint"]` | `"sinusoidal"` | 运动模式，下拉选择 |
 | `initial_x_m` | float | `100.0` | 初始 X 坐标（米） |
 | `initial_y_m` | float | `0.0` | 初始 Y 坐标（米） |
-| `velocity_x_mps` | float | `0.0` | X 方向初速度（m/s） |
-| `velocity_y_mps` | float | `1.5` | Y 方向初速度（m/s） |
-| `accel_x_mps2` | float | `0.0` | X 方向加速度（m/s²） |
-| `accel_y_mps2` | float | `0.3` | Y 方向加速度（m/s²） |
-| `sin_amplitude_m` | float | `15.0` | 正弦振幅（米） |
-| `sin_frequency_hz` | float | `0.2` | 正弦频率（Hz） |
-| `random_max_accel_mps2` | float | `1.0` | 随机最大加速度（m/s²） |
-| `random_damping` | float | `0.98` | 速度阻尼系数 |
-| `random_seed` | int | `42` | 随机种子（可复现） |
+| `velocity_x_mps` | float | `0.0` | X 方向初速度（m/s），constant_velocity / constant_accel 使用 |
+| `velocity_y_mps` | float | `1.5` | Y 方向初速度（m/s），constant_velocity / constant_accel 使用 |
+| `accel_x_mps2` | float | `0.0` | X 方向加速度（m/s²），constant_accel 使用 |
+| `accel_y_mps2` | float | `0.3` | Y 方向加速度（m/s²），constant_accel 使用 |
+| `sin_amplitude_m` | float | `15.0` | 正弦振幅（米），sinusoidal 使用 |
+| `sin_frequency_hz` | float | `0.2` | 正弦频率（Hz），sinusoidal 使用 |
+| `random_max_accel_mps2` | float | `1.0` | 随机最大加速度（m/s²），random_walk 使用 |
+| `random_damping` | float | `0.98` | 速度阻尼系数，random_walk 使用 |
+| `random_seed` | int | `42` | 随机种子（可复现），random_walk 使用 |
+| `waypoints` | list | `None` | 航点列表 `[(x, y, speed), ...]`，speed=0 悬停，waypoint 使用 |
+| `waypoint_arrival_radius_m` | float | `1.0` | 到达航点判定半径（米），waypoint 使用 |
 
 ## 5. 内部模型详解
 
 ### 5.1 TargetKinematics2D
 
-核心方法 `step(dt) -> (x, y)`，根据 `motion_type` 分支：
+核心方法 `step(dt) -> (x, y)`，根据 `motion_type` 分支（共 5 种模式）：
 
 **constant_velocity（匀速直线）**
 ```
@@ -79,6 +81,13 @@ vx = vx * damping + ax * dt
 vy = vy * damping + ay * dt
 x += vx * dt
 y += vy * dt
+```
+
+**waypoint（航点导航）**
+```
+朝当前航点以指定速度飞行
+到达（距离 < arrival_radius）后切换下一航点
+speed=0 时悬停，最后一个航点后停止
 ```
 
 ### 5.2 派生属性
@@ -131,10 +140,14 @@ world_obs = { "target": target_state.__dict__, ... }
 
 ## 9. 扩展点
 
-添加新运动模式：
+添加新运动模式只需改 `config.py` 一个文件，UI 自动生效：
 
-1. 在 `TargetConfig` 中增加对应参数
-2. 在 `TargetKinematics2D.step()` 中增加 `elif self.cfg.motion_type == "your_mode":` 分支
+1. 在 `TargetConfig.motion_type` 的 `Literal[...]` 中加模式名
+2. 在 `MOTION_MODE_PARAMS` 中加模式→字段映射（控制 UI 显隐）
+3. 在 `TargetConfig` 中加新参数字段
+4. 在 `TargetKinematics2D.step()` 中加 `elif` 分支实现物理逻辑
+
+Config Editor 自动读取 `Literal` 类型生成下拉选项，并根据 `MOTION_MODE_PARAMS` 过滤显示对应参数。
 
 ## 10. 测试
 
