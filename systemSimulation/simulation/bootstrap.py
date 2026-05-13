@@ -13,15 +13,21 @@ class ControlProgramFactory(Protocol):
 
 
 def apply_delay_profile(runtime: DigitalTwinRuntime, delay_ms: float) -> None:
-    """按统一规则设置 Raspi 链路延时。"""
+    """按总延迟预算设置 Raspi 链路延时。
+
+    delay_ms 作为端到端总延迟预算，按真实硬件比例分配到各阶段：
+      观测读取（并行）| 图像处理 | 命令发送
+      比例 ≈ 25%     |   50%    |   25%
+    obs 阶段取 max(image_read, state_read)，实际总延迟 ≈ delay_ms。
+    """
     if delay_ms <= 0.0:
         return
-    delay_s = float(delay_ms) / 1000.0
+    total_s = float(delay_ms) / 1000.0
     runtime.raspi_client.set_delay_profile(
-        image_read_delay_s=delay_s,
-        image_process_delay_s=delay_s,
-        state_read_delay_s=delay_s * 0.5,
-        command_tx_delay_s=delay_s,
+        image_read_delay_s=total_s * 0.25,
+        image_process_delay_s=total_s * 0.50,
+        state_read_delay_s=total_s * 0.25,
+        command_tx_delay_s=total_s * 0.25,
         jitter_std_s=0.0,
     )
 
@@ -60,7 +66,13 @@ def start_stack(
         from entities.raspi.tracker_program import BaselineTrackerProgram
         control_program = BaselineTrackerProgram()
 
-    program = control_program() if callable(control_program) and not hasattr(control_program, "on_tick") else control_program
+    # 区分传入类型：实例直接用，类或工厂函数需调用
+    if hasattr(control_program, "on_tick"):
+        program = control_program
+    elif callable(control_program):
+        program = control_program()
+    else:
+        program = control_program
     runtime.raspi_client.load_control_program(program)
     apply_delay_profile(runtime, delay_ms)
     return runtime

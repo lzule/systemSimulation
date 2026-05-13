@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from config import tracker_tuning_cfg
 from entities.camera.entity import detect_beacon_centroid
 from entities.gimbal.control import RATE_MODE
 from runtime.types import Command
@@ -39,7 +40,19 @@ class BaselineTrackerProgram:
     """
 
     def __init__(self, tuning: Optional[TrackerTuning] = None):
-        self.tuning = tuning or TrackerTuning()
+        if tuning is None:
+            tuning = TrackerTuning(
+                yaw_rate_kp_dps_per_px=tracker_tuning_cfg.yaw_rate_kp_dps_per_px,
+                max_yaw_rate_dps=tracker_tuning_cfg.max_yaw_rate_dps,
+                deadband_px=tracker_tuning_cfg.deadband_px,
+                lost_target_hold_rate_dps=tracker_tuning_cfg.lost_target_hold_rate_dps,
+                enable_zoom_control=tracker_tuning_cfg.enable_zoom_control,
+                zoom_in_error_px=tracker_tuning_cfg.zoom_in_error_px,
+                zoom_out_error_px=tracker_tuning_cfg.zoom_out_error_px,
+                zoom_step_mm=tracker_tuning_cfg.zoom_step_mm,
+                zoom_cooldown_s=tracker_tuning_cfg.zoom_cooldown_s,
+            )
+        self.tuning = tuning
         self.last_pixel_error_x: float = 0.0
         self.last_detection_found: bool = False
         self.last_yaw_rate_cmd_dps: float = 0.0

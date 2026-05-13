@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from config import gimbal_cfg, raspi_delay_cfg, scene_cfg
 from simulation.bootstrap import build_runtime, load_control_program_from_path
 from simulation.gui.panels import CameraPanel, WorldView
 from simulation.qt_compat import QtCore, QtGui, QtWidgets, pg
@@ -23,6 +24,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
     def __init__(self, cfg: AppConfig):
         super().__init__()
         self.cfg = cfg
+        self.scene_cfg = scene_cfg
         self._last_ui_perf = time.perf_counter()
         self._ui_tick_counter = 0
         self._fps_value = 0.0
@@ -141,6 +143,18 @@ class DashboardWindow(QtWidgets.QMainWindow):
             self.btn_apply_delay,
         ):
             toolbar_layout.addWidget(w)
+
+        # 延时链路信息（嵌入控制栏）
+        read_ms = raspi_delay_cfg.image_read_delay_s * 1000
+        proc_ms = raspi_delay_cfg.image_process_delay_s * 1000
+        send_ms = raspi_delay_cfg.command_tx_delay_s * 1000
+        tau_ms = gimbal_cfg.response_tau_s * 1000
+        self.lbl_delay_chain = QtWidgets.QLabel(
+            f"  延时链路: 读取{read_ms:.0f}ms → 处理{proc_ms:.0f}ms → 发送{send_ms:.0f}ms + 云台τ{tau_ms:.0f}ms │ 观测延迟: --ms"
+        )
+        self.lbl_delay_chain.setStyleSheet("color: #666; font-size: 9pt;")
+        toolbar_layout.addWidget(self.lbl_delay_chain)
+
         toolbar_layout.addStretch(1)
         toolbar_layout.addWidget(self.lbl_fps)
         toolbar_layout.addWidget(self.lbl_runtime_state)
@@ -162,11 +176,19 @@ class DashboardWindow(QtWidgets.QMainWindow):
         world_layout.addWidget(self.world_view)
         left_layout.addWidget(world_box, 6)
 
-        timeline_box = QtWidgets.QGroupBox("底部时间轴（误差 / 命令 / 角度误差）")
+        timeline_box = QtWidgets.QGroupBox("底部时间轴（误差 / 角速度）")
         timeline_layout = QtWidgets.QVBoxLayout(timeline_box)
         timeline_layout.setContentsMargins(8, 8, 8, 8)
-        self.timeline_plot = pg.PlotWidget() if pg is not None else QtWidgets.QLabel("pyqtgraph 未安装，无法显示曲线")
-        timeline_layout.addWidget(self.timeline_plot)
+        if pg is not None:
+            self.timeline_container = QtWidgets.QWidget()
+            tl_vbox = QtWidgets.QVBoxLayout(self.timeline_container)
+            tl_vbox.setContentsMargins(0, 0, 0, 0)
+            tl_vbox.setSpacing(2)
+            self.timeline_container_layout = tl_vbox
+            timeline_layout.addWidget(self.timeline_container)
+        else:
+            self.timeline_container = None
+            timeline_layout.addWidget(QtWidgets.QLabel("pyqtgraph 未安装，无法显示曲线"))
         left_layout.addWidget(timeline_box, 4)
 
         right_panel = QtWidgets.QWidget()
@@ -351,26 +373,75 @@ class DashboardWindow(QtWidgets.QMainWindow):
         scene.addItem(self.world_title)
 
     def _build_timeline(self) -> None:
-        if pg is None or not isinstance(self.timeline_plot, pg.PlotWidget):
+        if pg is None or self.timeline_container is None:
             return
 
-        self.timeline_plot.setBackground("#ffffff")
-        self.timeline_plot.showGrid(x=True, y=True, alpha=0.24)
-        self.timeline_plot.addLegend(offset=(8, 8))
-        self.timeline_plot.setLabel("bottom", "t", units="s")
-        self.timeline_plot.setLabel("left", "value")
-        self.timeline_plot.getAxis("left").setStyle(tickTextOffset=10)
-        self.timeline_plot.getAxis("bottom").setStyle(tickTextOffset=8)
+        vbox = self.timeline_container_layout
 
-        self.curve_err = self.timeline_plot.plot(
-            [], [], pen=pg.mkPen(COLOR["err"], width=2), name="pixel_error_x (px)"
+        # GraphicsLayoutWidget：共享 X 轴的多行布局
+        self.timeline_gw = pg.GraphicsLayoutWidget()
+        self.timeline_gw.setBackground("#ffffff")  # 整体白色背景
+
+        # ── 上图：像素误差(px) 左轴 + 角度误差(deg) 右轴 ──
+        self.plot_err = self.timeline_gw.addPlot(row=0, col=0)
+        self.plot_err.vb.setBackgroundColor("#f5f6f8")
+        self.plot_err.showGrid(x=True, y=True, alpha=0.24)
+        self.plot_err.setLabel("left", "像素误差", units="px")
+        self.plot_err.getAxis("left").setStyle(tickTextOffset=10)
+        # 隐藏上图 X 轴所有元素，只保留占位空间（与下图对齐）
+        self.plot_err.getAxis("bottom").setStyle(showValues=False)
+        self.plot_err.getAxis("bottom").setHeight(40)  # 预留与下图 X 轴标签等高的空间
+        self.plot_err.addLegend(offset=(8, 8))
+
+        self.curve_err = self.plot_err.plot(
+            [], [], pen=pg.mkPen(COLOR["err"], width=2), name="pixel_error (px)"
         )
-        self.curve_rate = self.timeline_plot.plot(
+
+        # 右 Y 轴：角度误差
+        self.plot_err.showAxis("right")
+        self.plot_err.getAxis("right").setStyle(tickTextOffset=10)
+        self.plot_err.getAxis("right").setLabel("角度误差", units="deg")
+        self.plot_err_vb_right = pg.ViewBox()
+        self.plot_err.scene().addItem(self.plot_err_vb_right)
+        self.plot_err.getAxis("right").linkToView(self.plot_err_vb_right)
+        self.plot_err_vb_right.setXLink(self.plot_err)
+
+        self.curve_angle = pg.PlotCurveItem(
+            [], [], pen=pg.mkPen(COLOR["angle"], width=2)
+        )
+        self.plot_err_vb_right.addItem(self.curve_angle)
+        self.plot_err.legend.addItem(self.curve_angle, "angle_err (deg)")
+
+        def _update_err_right_axis() -> None:
+            self.plot_err_vb_right.setGeometry(self.plot_err.vb.sceneBoundingRect())
+            self.plot_err_vb_right.linkedViewChanged(self.plot_err.vb, self.plot_err_vb_right.XAxis)
+
+        self._update_err_right_axis = _update_err_right_axis
+        _update_err_right_axis()
+        self.plot_err.vb.sigResized.connect(_update_err_right_axis)
+
+        # ── 下图：角速度(dps) ──
+        self.plot_rate = self.timeline_gw.addPlot(row=1, col=0)
+        self.plot_rate.vb.setBackgroundColor("#ffffff")
+        self.plot_rate.showGrid(x=True, y=True, alpha=0.24)
+        self.plot_rate.setLabel("left", "角速度", units="dps")
+        self.plot_rate.setLabel("bottom", "t", units="s")
+        self.plot_rate.getAxis("left").setStyle(tickTextOffset=10)
+        self.plot_rate.getAxis("bottom").setStyle(tickTextOffset=8)
+        self.plot_rate.addLegend(offset=(8, 8))
+
+        # 下图也显示右轴（空），确保绘图区与上图等宽
+        self.plot_rate.showAxis("right")
+        self.plot_rate.getAxis("right").setStyle(showValues=False)
+
+        self.curve_rate = self.plot_rate.plot(
             [], [], pen=pg.mkPen(COLOR["rate"], width=2), name="yaw_rate_ref (dps)"
         )
-        self.curve_angle = self.timeline_plot.plot(
-            [], [], pen=pg.mkPen(COLOR["angle"], width=2), name="angle_err (deg)"
-        )
+
+        # X 轴联动
+        self.plot_rate.setXLink(self.plot_err)
+
+        vbox.addWidget(self.timeline_gw)
 
     def _set_runtime_state(self, text: str, running: bool) -> None:
         self.lbl_runtime_state.setText(text)
@@ -487,7 +558,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.world_view.ensure_range(lim)
 
     def _draw_timeline(self, t_list: list[float], err_list: list[float], rate_list: list[float], angle_err_list: list[float]) -> None:
-        if pg is None or not isinstance(self.timeline_plot, pg.PlotWidget):
+        if pg is None or self.timeline_container is None:
             return
         if not t_list:
             return
@@ -498,7 +569,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         angle_np = np.asarray(angle_err_list, dtype=float)
 
         t_max = float(t_np[-1])
-        t_min = max(0.0, t_max - 15.0)
+        t_min = max(0.0, t_max - self.scene_cfg.plot_window_s)
         mask = (t_np >= t_min) & (t_np <= t_max)
         t_np = t_np[mask]
         err_np = err_np[mask]
@@ -511,21 +582,33 @@ class DashboardWindow(QtWidgets.QMainWindow):
         valid_rate = np.isfinite(rate_np)
         valid_angle = np.isfinite(angle_np)
 
+        # ── 上图：像素误差(左轴) + 角度误差(右轴) ──
         t_err, y_err = self._decimate_xy(t_np[valid_err], err_np[valid_err])
-        t_rate, y_rate = self._decimate_xy(t_np[valid_rate], rate_np[valid_rate])
         t_angle, y_angle = self._decimate_xy(t_np[valid_angle], angle_np[valid_angle])
-
         self.curve_err.setData(t_err, y_err)
-        self.curve_rate.setData(t_rate, y_rate)
         self.curve_angle.setData(t_angle, y_angle)
 
-        all_y = np.concatenate([arr for arr in (y_err, y_rate, y_angle) if len(arr) > 0])
-        if len(all_y) > 0:
-            y_min = float(np.min(all_y))
-            y_max = float(np.max(all_y))
-            pad = max(5.0, 0.12 * max(1.0, y_max - y_min))
-            self.timeline_plot.setXRange(t_min, t_max + 0.01, padding=0.0)
-            self.timeline_plot.setYRange(y_min - pad, y_max + pad, padding=0.0)
+        # 左轴范围（像素误差）
+        if len(y_err) > 0:
+            e_min, e_max = float(np.min(y_err)), float(np.max(y_err))
+            e_pad = max(5.0, 0.12 * max(1.0, e_max - e_min))
+            self.plot_err.vb.setYRange(e_min - e_pad, e_max + e_pad, padding=0.0)
+        # 右轴范围（角度误差）
+        if len(y_angle) > 0:
+            a_min, a_max = float(np.min(y_angle)), float(np.max(y_angle))
+            a_pad = max(1.0, 0.12 * max(1.0, a_max - a_min))
+            self.plot_err_vb_right.setYRange(a_min - a_pad, a_max + a_pad, padding=0.0)
+
+        self.plot_err.vb.setXRange(t_min, t_max + 0.01, padding=0.0)
+
+        # ── 下图：角速度 ──
+        t_rate, y_rate = self._decimate_xy(t_np[valid_rate], rate_np[valid_rate])
+        self.curve_rate.setData(t_rate, y_rate)
+        if len(y_rate) > 0:
+            r_min, r_max = float(np.min(y_rate)), float(np.max(y_rate))
+            r_pad = max(3.0, 0.12 * max(1.0, r_max - r_min))
+            self.plot_rate.vb.setYRange(r_min - r_pad, r_max + r_pad, padding=0.0)
+        self.plot_rate.vb.setXRange(t_min, t_max + 0.01, padding=0.0)
 
     @staticmethod
     def _camera_info_text(frame: Optional[FrameSample], u_px: float, v_px: float, in_fov: bool) -> tuple[str, bool]:
@@ -538,7 +621,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         du = u_px - cx if math.isfinite(u_px) else float("nan")
         dv = v_px - cy if math.isfinite(v_px) else float("nan")
         text = (
-            f"{w}x{h}px  |  cx={cx:.1f}, cy={cy:.1f}  |  "
+            f"{w}x{h}px  |  t={frame.timestamp:.3f}s  |  "
             f"u={u_px:.1f}, v={v_px:.1f}  |  du={du:.1f}, dv={dv:.1f}  |  "
             f"{'在视野内' if in_fov else '视野外'}"
         )
@@ -689,11 +772,25 @@ class DashboardWindow(QtWidgets.QMainWindow):
         raspi_frame = None if not math.isfinite(raspi_obs_ts) else self.state_buf.find_frame_at_or_before(raspi_obs_ts)
         self.raspi_panel.view.update_frame(raspi_frame)
         raspi_info, raspi_ok = self._camera_info_text(raspi_frame, u_px, v_px, in_fov)
+        # 在 Raspi 面板标题中显示帧延时差
+        if raspi_frame is not None and raw_frame is not None:
+            frame_lag_ms = (raw_frame.timestamp - raspi_frame.timestamp) * 1000
+            self.raspi_panel.title_label.setText(f"Raspi 延时视角（滞后 {frame_lag_ms:.1f}ms）")
         self.raspi_panel.set_info_text(raspi_info, raspi_ok)
 
         self._update_core_tab(snapshot, raw_frame)
         self._update_diag_tab(snapshot, raw_frame, raspi_frame)
         self._update_fps_label()
+
+        # 实时更新观测延迟
+        read_ms = raspi_delay_cfg.image_read_delay_s * 1000
+        proc_ms = raspi_delay_cfg.image_process_delay_s * 1000
+        send_ms = raspi_delay_cfg.command_tx_delay_s * 1000
+        tau_ms = gimbal_cfg.response_tau_s * 1000
+        obs_lat_ms = float(snapshot.raspi.get("last_process_latency_s", 0.0)) * 1000
+        self.lbl_delay_chain.setText(
+            f"  延时链路: 读取{read_ms:.0f}ms → 处理{proc_ms:.0f}ms → 发送{send_ms:.0f}ms + 云台τ{tau_ms:.0f}ms │ 观测延迟: {obs_lat_ms:.1f}ms"
+        )
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.ui_timer.stop()

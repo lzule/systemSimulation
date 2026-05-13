@@ -274,7 +274,8 @@ class TestCustomControlProgram(unittest.TestCase):
 
 class TestPipelineBacklog(unittest.TestCase):
 
-    def test_backlog_reflects_pending_items(self):
+    def test_backlog_is_0_or_1(self):
+        """单槽模型：backlog 只能是 0（空闲）或 1（忙碌）。"""
         r = RaspiEntity()
         r.delay_cfg = RaspiDelayConfig(
             image_read_delay_s=0.5,
@@ -286,19 +287,14 @@ class TestPipelineBacklog(unittest.TestCase):
 
         dt = 0.01
         t = 0.0
-        max_backlog = 0
-        for _ in range(50):
+        for _ in range(150):
             t += dt
             r.update(t, _make_obs(t), lambda cmd, at: None, dt)
             backlog = r.get_state()["pipeline_backlog_len"]
-            max_backlog = max(max_backlog, backlog)
+            self.assertIn(backlog, (0, 1), f"backlog should be 0 or 1, got {backlog} at t={t}")
 
-        # With long delays, items should accumulate before being processed
-        # Note: during BOOTING, pipeline is not active, so backlog may be 0
-        # After READY, items will start accumulating
-        self.assertGreaterEqual(max_backlog, 0)
-
-    def test_backlog_clears_when_caught_up(self):
+    def test_backlog_is_0_or_1_when_noop(self):
+        """Noop 程序下 backlog 仍然只能是 0 或 1。"""
         r = RaspiEntity()
         r.power_on(0.0)
         r.load_control_program(NoopControlProgram())
@@ -308,10 +304,8 @@ class TestPipelineBacklog(unittest.TestCase):
         for _ in range(500):
             t += dt
             r.update(t, _make_obs(t), lambda cmd, at: None, dt)
-
-        # After enough time, backlog should be 0 (no commands being generated)
-        state = r.get_state()
-        self.assertGreaterEqual(state["pipeline_backlog_len"], 0)
+            backlog = r.get_state()["pipeline_backlog_len"]
+            self.assertIn(backlog, (0, 1))
 
 
 # ===================================================================
@@ -365,11 +359,11 @@ class TestDelayProfile(unittest.TestCase):
     def test_default_delay_profile(self):
         r = RaspiEntity()
         got = r.get_delay_profile()
-        self.assertAlmostEqual(got["image_read_delay_s"], 0.0)
-        self.assertAlmostEqual(got["image_process_delay_s"], 0.02)
-        self.assertAlmostEqual(got["state_read_delay_s"], 0.0)
-        self.assertAlmostEqual(got["command_tx_delay_s"], 0.0)
-        self.assertAlmostEqual(got["jitter_std_s"], 0.0)
+        self.assertAlmostEqual(got["image_read_delay_s"], 0.005)
+        self.assertAlmostEqual(got["image_process_delay_s"], 0.015)
+        self.assertAlmostEqual(got["state_read_delay_s"], 0.003)
+        self.assertAlmostEqual(got["command_tx_delay_s"], 0.003)
+        self.assertAlmostEqual(got["jitter_std_s"], 0.001)
 
 
 # ===================================================================
@@ -447,6 +441,75 @@ class TestGetState(unittest.TestCase):
         state = r.get_state()
         self.assertEqual(state["power_state"], POWER_OFF)
         self.assertEqual(state["pipeline_backlog_len"], 0)
+
+
+# ===================================================================
+# 12. 单槽忙/闲行为
+# ===================================================================
+
+
+class TestSingleSlotBusyIdle(unittest.TestCase):
+
+    def test_busy_does_not_accept_new_frame(self):
+        """Pi 忙碌时不会启动新的处理周期。"""
+        r = RaspiEntity()
+        r.delay_cfg = RaspiDelayConfig(
+            image_read_delay_s=0.05,
+            image_process_delay_s=0.03,
+            command_tx_delay_s=0.02,
+        )
+        r.power_on(0.0)
+        r.load_control_program(_CmdProg())
+
+        # 运行足够长时间
+        dt = 0.01
+        t = 0.0
+        submitted = []
+
+        def _submit(cmd, apply_at):
+            submitted.append((cmd, apply_at))
+
+        for _ in range(200):
+            t += dt
+            r.update(t, _make_obs(t), _submit, dt)
+
+        # 命令应已产生（经过延迟后）
+        self.assertGreater(len(submitted), 0)
+        # 但不应每个 tick 都产生命令（因为 Pi 有处理延迟）
+        # 总延迟 = 0.05 + 0.03 + 0.02 = 0.10s，加上 boot 1.0s
+        # 200 ticks = 2.0s，其中有效时间约 1.0s，每个周期 0.10s，约 10 个命令
+        self.assertLess(len(submitted), 200, "不应该每个 tick 都产生命令")
+
+    def test_idle_grabs_latest_frame(self):
+        """Pi 空闲时总是拿最新帧，不处理旧帧。"""
+        r = RaspiEntity()
+        r.delay_cfg = RaspiDelayConfig(
+            image_read_delay_s=0.0,
+            image_process_delay_s=0.01,
+            command_tx_delay_s=0.0,
+        )
+        r.power_on(0.0)
+
+        # 用自定义控制程序记录收到的 obs timestamp
+        received_ts = []
+
+        class _TsRecorder:
+            def on_tick(self, obs):
+                received_ts.append(float(obs["timestamp"]))
+                return []
+
+        r.load_control_program(_TsRecorder())
+
+        dt = 0.005
+        t = 0.0
+        for _ in range(500):
+            t += dt
+            r.update(t, _make_obs(t), lambda cmd, at: None, dt)
+
+        # 处理过的 obs timestamp 应该是递增的
+        self.assertEqual(received_ts, sorted(set(received_ts)))
+        # 不应该处理每个 tick 的 obs（因为 process_delay=0.01s > dt=0.005s）
+        self.assertLess(len(received_ts), 500)
 
 
 if __name__ == "__main__":

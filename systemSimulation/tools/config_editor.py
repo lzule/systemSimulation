@@ -99,7 +99,7 @@ ENTITY_GROUPS = [
     {"key": "target", "label": "目标", "configs": ["target_cfg"]},
     {"key": "gimbal", "label": "云台", "configs": ["gimbal_cfg", "axis_limit_cfg", "loop_cfg", "control_preset_cfg", "yaw_display_cfg"]},
     {"key": "camera", "label": "相机", "configs": ["camera_cfg"]},
-    {"key": "raspi", "label": "树莓派", "configs": ["raspi_cfg", "raspi_delay_cfg"]},
+    {"key": "raspi", "label": "树莓派", "configs": ["raspi_cfg", "raspi_delay_cfg", "tracker_tuning_cfg"]},
     {"key": "scene", "label": "场景", "configs": ["scene_cfg"]},
 ]
 
@@ -113,6 +113,7 @@ GROUP_TITLES = {
     "camera_cfg": "相机参数",
     "raspi_cfg": "树莓派配置",
     "raspi_delay_cfg": "延时链路",
+    "tracker_tuning_cfg": "基线跟踪参数",
     "scene_cfg": "场景与仿真",
 }
 
@@ -368,6 +369,53 @@ FIELD_META: dict[tuple[str, str], FieldMeta] = {
         "延时抖动标准差（秒）",
         "模拟真实系统的随机延时波动，0 表示无抖动",
         "抖动使跟踪性能出现随机波动，增加分析难度",
+    ),
+
+    # ── tracker_tuning_cfg 基线跟踪参数 ──
+    ("tracker_tuning_cfg", "yaw_rate_kp_dps_per_px"): FieldMeta(
+        "像素→角速度比例增益 (Kp)",
+        "典型值 0.04-0.20，过大会振荡",
+        "每像素偏差映射为多少度/秒的角速度命令",
+    ),
+    ("tracker_tuning_cfg", "max_yaw_rate_dps"): FieldMeta(
+        "最大角速度限幅（度/秒）",
+        "与云台 max_rate_dps 保持一致",
+        "限制命令角速度上限，防止过冲",
+    ),
+    ("tracker_tuning_cfg", "deadband_px"): FieldMeta(
+        "死区（像素）",
+        "0-5px，小于此偏差不输出命令",
+        "消除微小振荡，减少不必要的控制动作",
+    ),
+    ("tracker_tuning_cfg", "lost_target_hold_rate_dps"): FieldMeta(
+        "丢失目标后保持角速度（度/秒）",
+        "0 表示停止，非零可保持最后方向搜索",
+        "目标丢失后的保持策略",
+    ),
+    ("tracker_tuning_cfg", "enable_zoom_control"): FieldMeta(
+        "是否启用自动变焦",
+        "关闭时只做跟踪不控制焦距",
+        "根据像素误差自动调整焦距",
+    ),
+    ("tracker_tuning_cfg", "zoom_in_error_px"): FieldMeta(
+        "拉近焦距阈值（像素）",
+        "误差小于此值时拉近焦距",
+        "目标居中时放大观察",
+    ),
+    ("tracker_tuning_cfg", "zoom_out_error_px"): FieldMeta(
+        "拉远焦距阈值（像素）",
+        "误差大于此值时拉远焦距",
+        "误差过大时扩大视野防止丢失",
+    ),
+    ("tracker_tuning_cfg", "zoom_step_mm"): FieldMeta(
+        "每次变焦步长（毫米）",
+        "0.5-2.0mm",
+        "每次变焦调整的焦距变化量",
+    ),
+    ("tracker_tuning_cfg", "zoom_cooldown_s"): FieldMeta(
+        "变焦冷却时间（秒）",
+        "0.1-0.5s，避免频繁变焦",
+        "两次变焦命令的最小间隔",
     ),
 
     # ── scene_cfg 场景与仿真 ──

@@ -97,36 +97,27 @@ class RaspiEntity:
 
         if self.power_state == POWER_READY:
             obs_delay = max(float(self.delay_cfg.image_read_delay_s), float(self.delay_cfg.state_read_delay_s)) + self._jitter()
-            self.delay_model.pipeline.push_obs(timestamp + obs_delay, world_obs)
+            self.delay_model.try_start(timestamp, world_obs, obs_delay)
 
-            ready_obs = self.delay_model.pipeline.pop_ready_obs(timestamp)
-            for obs in ready_obs:
-                process_available = timestamp + float(self.delay_cfg.image_process_delay_s) + self._jitter()
-                self.delay_model.pipeline.push_proc(process_available, {"obs": obs, "ready_at": process_available})
-
-            ready_proc = self.delay_model.pipeline.pop_ready_proc(timestamp)
-            for proc_item in ready_proc:
-                obs = proc_item["obs"]
-                obs_ts = float(obs["timestamp"])
+            for obs_ts, cmds in self.delay_model.tick(
+                timestamp,
+                float(self.delay_cfg.image_process_delay_s),
+                float(self.delay_cfg.command_tx_delay_s),
+                self.control_program,
+                self._jitter,
+            ):
                 self.effective_obs_timestamp = obs_ts
                 self.last_process_latency_s = max(0.0, timestamp - obs_ts)
-
-                cmds = self.control_program.on_tick(obs)
                 for cmd in cmds:
-                    cmd_available = timestamp + float(self.delay_cfg.command_tx_delay_s) + self._jitter()
-                    self.delay_model.pipeline.push_cmd(cmd_available, cmd)
-
-            ready_cmds = self.delay_model.pipeline.pop_ready_cmd(timestamp)
-            for cmd in ready_cmds:
-                apply_at = timestamp + runtime_dt
-                submit_cmd(cmd, apply_at)
-                self.last_command_apply_timestamp = apply_at
+                    apply_at = timestamp + runtime_dt
+                    submit_cmd(cmd, apply_at)
+                    self.last_command_apply_timestamp = apply_at
 
         self._last_state = RaspiState(
             timestamp=timestamp,
             power_state=self.power_state,
             effective_obs_timestamp=self.effective_obs_timestamp,
-            pipeline_backlog_len=self.delay_model.pipeline.backlog_len(),
+            pipeline_backlog_len=1 if self.delay_model.is_busy() else 0,
             last_process_latency_s=self.last_process_latency_s,
             last_command_apply_timestamp=self.last_command_apply_timestamp,
             delay_metrics={

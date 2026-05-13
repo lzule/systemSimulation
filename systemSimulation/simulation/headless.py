@@ -11,13 +11,13 @@ from simulation.types import AppConfig
 
 def apply_target_overrides(cfg: AppConfig) -> None:
     """根据 AppConfig 覆盖目标运动配置（公共接口，GUI 和 headless 共用）。"""
-    if cfg.target_type:
+    if cfg.target_type or cfg.waypoints:
         from config import target_cfg
-        target_cfg.motion_type = cfg.target_type
-    if cfg.waypoints:
-        from config import target_cfg
-        target_cfg.motion_type = "waypoint"
-        target_cfg.waypoints = _parse_waypoints(cfg.waypoints)
+        if cfg.target_type:
+            target_cfg.motion_type = cfg.target_type
+        if cfg.waypoints:
+            target_cfg.motion_type = "waypoint"
+            target_cfg.waypoints = _parse_waypoints(cfg.waypoints)
 
 
 def _parse_waypoints(waypoints_str: str) -> list[tuple[float, float, float]]:

@@ -7,7 +7,7 @@ from config import TargetConfig, target_cfg
 
 
 class TargetKinematics2D:
-    def __init__(self, cfg: TargetConfig = None):
+    def __init__(self, cfg: TargetConfig | None = None):
         self.cfg = cfg or target_cfg
         self.x: float = self.cfg.initial_x_m
         self.y: float = self.cfg.initial_y_m
@@ -19,7 +19,7 @@ class TargetKinematics2D:
             self.vx = self.cfg.velocity_x_mps
             self.vy = self.cfg.velocity_y_mps
         elif self.cfg.motion_type == "random_walk":
-            np.random.seed(self.cfg.random_seed)
+            self._rng = np.random.default_rng(self.cfg.random_seed)
         elif self.cfg.motion_type == "waypoint":
             self._wp_index = 0
             self._wp_list = self.cfg.waypoints or []
@@ -44,8 +44,8 @@ class TargetKinematics2D:
             self.vx = 0.0
             self.vy = cfg.sin_amplitude_m * omega * math.cos(omega * self.t)
         elif cfg.motion_type == "random_walk":
-            ax = np.random.uniform(-cfg.random_max_accel_mps2, cfg.random_max_accel_mps2)
-            ay = np.random.uniform(-cfg.random_max_accel_mps2, cfg.random_max_accel_mps2)
+            ax = self._rng.uniform(-cfg.random_max_accel_mps2, cfg.random_max_accel_mps2)
+            ay = self._rng.uniform(-cfg.random_max_accel_mps2, cfg.random_max_accel_mps2)
             self.vx = self.vx * cfg.random_damping + ax * dt
             self.vy = self.vy * cfg.random_damping + ay * dt
             self.x += self.vx * dt

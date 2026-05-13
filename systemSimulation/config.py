@@ -81,11 +81,24 @@ class RaspiConfig:
 
 @dataclass
 class RaspiDelayConfig:
-    image_read_delay_s: float = 0.0
-    image_process_delay_s: float = 0.02
-    state_read_delay_s: float = 0.0
-    command_tx_delay_s: float = 0.0
-    jitter_std_s: float = 0.0
+    image_read_delay_s: float = 0.005
+    image_process_delay_s: float = 0.015
+    state_read_delay_s: float = 0.003
+    command_tx_delay_s: float = 0.003
+    jitter_std_s: float = 0.001
+
+
+@dataclass
+class TrackerTuningConfig:
+    yaw_rate_kp_dps_per_px: float = 1.1
+    max_yaw_rate_dps: float = 60.0
+    deadband_px: float = 2.0
+    lost_target_hold_rate_dps: float = 0.0
+    enable_zoom_control: bool = False
+    zoom_in_error_px: float = 40.0
+    zoom_out_error_px: float = 120.0
+    zoom_step_mm: float = 1.0
+    zoom_cooldown_s: float = 0.15
 
 
 @dataclass
@@ -131,10 +144,10 @@ class SceneConfig:
     gif_fps: int = 15
 
     trail_length_s: float = 4.0
-    plot_window_s: float = 8.0
+    plot_window_s: float = 5.0
     world_view_range_m: float = 150.0
 
-    pixel_noise_std: float = 0.5
+    pixel_noise_std: float = 2.0
 
 
 camera_cfg = CameraConfig()
@@ -145,5 +158,6 @@ control_preset_cfg = ControlPreset()
 yaw_display_cfg = YawDisplayConfig()
 raspi_cfg = RaspiConfig()
 raspi_delay_cfg = RaspiDelayConfig()
+tracker_tuning_cfg = TrackerTuningConfig()
 target_cfg = TargetConfig()
 scene_cfg = SceneConfig()
