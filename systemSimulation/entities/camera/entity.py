@@ -25,7 +25,9 @@ class CameraState:
     v_px: float
 
 
-def detect_beacon_centroid(image: np.ndarray, threshold: int = 180) -> Detection:
+def detect_beacon_centroid(image: np.ndarray, threshold: int = None) -> Detection:
+    if threshold is None:
+        threshold = camera_cfg.detection_threshold
     ys, xs = np.where(image >= threshold)
     if len(xs) == 0:
         return Detection(found=False, confidence=0.0)
@@ -39,7 +41,7 @@ class CameraEntity:
     def __init__(self, cfg: CameraConfig | None = None):
         self.cfg = cfg or camera_cfg
         self.power_state = POWER_OFF
-        self.boot_delay_s = 0.5
+        self.boot_delay_s = float(self.cfg.boot_delay_s)
         self.boot_remaining_s = 0.0
 
         self.f_current_mm = float(self.cfg.focal_length_mm)

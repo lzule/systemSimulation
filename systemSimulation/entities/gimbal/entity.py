@@ -50,7 +50,7 @@ class GimbalEntity:
 
         self.power_state = POWER_OFF
         self.boot_remaining_s = 0.0
-        self.boot_delay_s = 1.5
+        self.boot_delay_s = float(self.gimbal_cfg.boot_delay_s)
 
         self.plant = GimbalPlant2Axis(self.axis_cfg, self.gimbal_cfg)
         self.controller = CascadedController2Axis(self.loop_cfg, self.control_preset, self.axis_cfg)

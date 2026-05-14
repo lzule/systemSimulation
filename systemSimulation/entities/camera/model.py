@@ -22,6 +22,7 @@ class CameraImagingModel:
     def render_beacon_frame(self, alpha_rad: float, f_mm: float, timestamp: float) -> Tuple[np.ndarray, bool, float, float]:
         h, w = int(self.cfg.resolution_h), int(self.cfg.resolution_w)
         frame = np.zeros((h, w), dtype=np.uint8)
+        sigma = self.cfg.beacon_sigma_px
 
         in_fov = abs(alpha_rad) <= self.fov_half_rad(f_mm)
         u = float("nan")
@@ -32,8 +33,8 @@ class CameraImagingModel:
             if 0 <= u < w:
                 xs = np.arange(w, dtype=np.float32)
                 ys = np.arange(h, dtype=np.float32)
-                gx = np.exp(-0.5 * ((xs - u) / 3.2) ** 2)
-                gy = np.exp(-0.5 * ((ys - v) / 3.2) ** 2)
+                gx = np.exp(-0.5 * ((xs - u) / sigma) ** 2)
+                gy = np.exp(-0.5 * ((ys - v) / sigma) ** 2)
                 blob = np.outer(gy, gx)
                 frame = np.clip(blob * 255.0, 0.0, 255.0).astype(np.uint8)
 

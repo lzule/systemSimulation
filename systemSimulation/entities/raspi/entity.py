@@ -81,7 +81,7 @@ class RaspiEntity:
         std = float(self.delay_cfg.jitter_std_s)
         if std <= 0.0:
             return 0.0
-        return max(0.0, random.gauss(0.0, std))
+        return abs(random.gauss(0.0, std))
 
     def update(
         self,

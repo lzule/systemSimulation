@@ -12,6 +12,9 @@ class CameraConfig:
     focal_length_mm: float = 12.0
     focal_min_mm: float = 4.4
     focal_max_mm: float = 200.0
+    boot_delay_s: float = 0.5
+    beacon_sigma_px: float = 3.2
+    detection_threshold: int = 180
 
     @property
     def pixel_size_mm(self) -> float:
@@ -41,6 +44,7 @@ class GimbalConfig:
     max_velocity_dps: float = 60.0
     response_tau_s: float = 0.03
     initial_angle_deg: float = 0.0
+    boot_delay_s: float = 1.5
 
 
 @dataclass

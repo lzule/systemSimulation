@@ -13,7 +13,7 @@ from runtime.types import Command
 class TrackerTuning:
     """基线跟踪参数（可按项目需求替换）。"""
 
-    yaw_rate_kp_dps_per_px: float = 0.08
+    yaw_rate_kp_dps_per_px: float = 1.1
     max_yaw_rate_dps: float = 60.0
     deadband_px: float = 2.0
     lost_target_hold_rate_dps: float = 0.0

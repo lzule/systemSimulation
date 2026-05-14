@@ -8,6 +8,9 @@
 |------|------|------|
 | **主 README** | [README.md](../README.md) | 系统架构、实体间数据流、组装联调、控制程序开发、延时仿真 |
 | **使用手册** | [docs/使用手册.md](使用手册.md) | 快速入门、单实体测试、代码规范、验收清单 |
+| **ATP 开发文档** | [docs/低空场景无线光通信ATP开发文档.md](低空场景无线光通信ATP开发文档.md) | 面向低空无线光通信 ATP 的严格开发顺序、阶段任务、产出与验收 |
+| **项目审阅与建议** | [docs/仿真系统项目审阅与优化建议.md](仿真系统项目审阅与优化建议.md) | Codex 对系统的高层概览审阅 |
+| **深度技术审阅** | [docs/仿真系统深度技术审阅.md](仿真系统深度技术审阅.md) | 对 Codex 审阅的逐节评估 + 独立深度审阅（代码问题、模型真实性、科研方向） |
 | **Target 文档** | [entities/target/README.md](../entities/target/README.md) | 4 种运动模式、参数表、运动学模型、扩展点 |
 | **Gimbal 文档** | [entities/gimbal/README.md](../entities/gimbal/README.md) | 串级 PID 控制器、状态机、参数调优、被控对象模型 |
 | **Camera 文档** | [entities/camera/README.md](../entities/camera/README.md) | 针孔成像模型、变焦控制、质心检测、帧渲染 |
@@ -38,3 +41,6 @@
 | tick 顺序 / 命令调度 | runtime/README.md |
 | 组装联调 / 控制程序 | README.md |
 | 代码规范 / 验收清单 | docs/使用手册.md |
+| ATP 阶段开发顺序 / 任务书 / 验收口径 | docs/低空场景无线光通信ATP开发文档.md |
+| 项目整体审阅 / 优化路线 | docs/仿真系统项目审阅与优化建议.md |
+| 深度技术审阅 / 代码问题 / 模型真实性 | docs/仿真系统深度技术审阅.md |
