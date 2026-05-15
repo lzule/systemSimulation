@@ -74,7 +74,7 @@
 - 已有基础视觉跟踪控制程序（BaselineTrackerProgram，P 控制器）
 - 已有无 GUI 和 GUI 运行方式
 - 已有较完整的单体测试和模块测试（224+8）
-- 参数已集中到 config.py（9 个 dataclass）
+- 参数已集中到 config.py（11 个 dataclass）
 - 延时管线已实现单槽忙/闲模型
 
 当前系统的明确边界：
