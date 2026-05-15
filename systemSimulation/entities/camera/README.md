@@ -192,5 +192,5 @@ if frame is not None:
 ## 10. 测试
 
 ```bash
-python -m unittest discover -s entities\camera\tests -p "test_*.py" -v
+conda run -n simulation python -m unittest discover -s entities\camera\tests -p "test_*.py" -v
 ```

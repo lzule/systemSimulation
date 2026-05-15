@@ -66,22 +66,22 @@ Gimbal ─── gimbal_state (yaw_deg) ──> Camera ── frame + world_obs 
 
 ```bash
 # 无 GUI 快速验证
-python app.py --no-gui --mode offline --duration 1.0
+conda run -n simulation python app.py --no-gui --mode offline --duration 1.0
 
 # GUI 实时仿真
-python app.py --mode realtime --duration 60
+conda run -n simulation python app.py --mode realtime --duration 60
 
 # 带延时链路
-python app.py --mode realtime --duration 30 --delay-ms 20
+conda run -n simulation python app.py --mode realtime --duration 30 --delay-ms 20
 
 # 自定义控制程序
-python app.py --no-gui --control-program my_tracker:MyTracker --duration 5
+conda run -n simulation python app.py --no-gui --control-program my_tracker:MyTracker --duration 5
 
 # 航点轨迹
-python app.py --no-gui --waypoints "(100,0,2),(80,30,1.5),(60,0,0)" --duration 20
+conda run -n simulation python app.py --no-gui --waypoints "(100,0,2),(80,30,1.5),(60,0,0)" --duration 20
 
 # 切换目标运动类型
-python app.py --no-gui --target-type constant_velocity --duration 5
+conda run -n simulation python app.py --no-gui --target-type constant_velocity --duration 5
 ```
 
 成功判据：出现 `t=... yaw=... u=... in_fov=...` 周期输出，无异常堆栈。
@@ -128,10 +128,10 @@ Raspi 内部的延时管线决定观测何时被控制程序处理。
 
 ### 3.4 Raspi → Runtime → Gimbal/Camera：命令闭环
 
-Raspi 的控制程序 `on_tick(obs)` 返回 `list[Command]`，经过命令发送延时后通过回调注入 Runtime：
+Raspi 的控制程序 `on_tick(obs)` 返回 `list[Command]`，经过单槽忙/闲延时管线后通过回调注入 Runtime：
 
 ```
-Raspi.on_tick(obs) → cmds → DelayPipeline(cmd_delay) → submit_cmd → Runtime._pending_commands
+Raspi.on_tick(obs) → cmds → 单槽延时管线(IDLE→READING→PROCESSING→SENDING) → submit_cmd → Runtime._pending_commands
 ```
 
 下一个 tick 的 `_apply_due_commands()` 将到期命令分派到对应实体。
@@ -201,23 +201,23 @@ for _ in range(4000):
 
 ```bash
 # 基线：无延时，快速验证闭环
-python app.py --no-gui --mode offline --duration 5
+conda run -n simulation python app.py --no-gui --mode offline --duration 5
 
 # 加延时，观察性能退化
-python app.py --no-gui --mode offline --duration 10 --delay-ms 20
+conda run -n simulation python app.py --no-gui --mode offline --duration 10 --delay-ms 20
 
 # GUI 实时观察
-python app.py --mode realtime --duration 60 --delay-ms 10
+conda run -n simulation python app.py --mode realtime --duration 60 --delay-ms 10
 
 # 长时间稳定性
-python app.py --no-gui --mode offline --duration 120 --delay-ms 30
+conda run -n simulation python app.py --no-gui --mode offline --duration 120 --delay-ms 30
 
 # 航点轨迹 + 自定义控制程序
-python app.py --no-gui --waypoints "(100,0,5),(50,30,3),(80,-20,4)" \
+conda run -n simulation python app.py --no-gui --waypoints "(100,0,5),(50,30,3),(80,-20,4)" \
     --control-program my_tracker:MyTracker --duration 30
 
 # 随机运动 + 延时
-python app.py --no-gui --target-type random_walk --delay-ms 15 --duration 20
+conda run -n simulation python app.py --no-gui --target-type random_walk --delay-ms 15 --duration 20
 ```
 
 ## 5. 控制程序开发
@@ -279,7 +279,7 @@ class MyTracker:
 
 ```bash
 # 格式: module:Class（模块路径:类名）
-python app.py --control-program my_tracker:MyTracker --duration 10
+conda run -n simulation python app.py --control-program my_tracker:MyTracker --duration 10
 
 # 也可以在代码中直接传入
 from simulation.bootstrap import build_runtime
@@ -292,19 +292,19 @@ runtime = build_runtime(control_program=MyTracker())
 
 ### 6.1 延时链路
 
-Raspi 的三级延时管线模拟真实硬件延迟：
+Raspi 的单槽忙/闲延时管线模拟真实硬件延迟：
 
 ```
-观测读取延时 → 图像处理延时 → 命令发送延时
+IDLE → READING → PROCESSING → SENDING → IDLE
 ```
 
-每级可独立配置延时和抖动。延时越大，控制程序看到的观测越陈旧，跟踪性能越差。
+忙时不接受新帧，空闲时取最新帧，不积压。延时越大，控制程序看到的观测越陈旧，跟踪性能越差。
 
 ### 6.2 如何设置
 
 ```bash
 # 命令行（统一延时）
-python app.py --delay-ms 20
+conda run -n simulation python app.py --delay-ms 20
 
 # 代码（精细控制）
 runtime.raspi_client.set_delay_profile(
@@ -327,9 +327,9 @@ runtime.raspi_client.set_delay_profile(
 ### 7.1 目标轨迹预览（2D 动画）
 
 ```bash
-python tools/target_preview.py                  # 交互式预览
-python tools/target_preview.py --save-gif       # 结束时保存 GIF
-python tools/target_preview.py --no-display     # 无头模式，自动保存 GIF
+conda run -n simulation python tools/target_preview.py                  # 交互式预览
+conda run -n simulation python tools/target_preview.py --save-gif       # 结束时保存 GIF
+conda run -n simulation python tools/target_preview.py --no-display     # 无头模式，自动保存 GIF
 ```
 
 显示目标在 2D 世界坐标中的运动轨迹、速度矢量、方位角和距离曲线。
@@ -337,7 +337,7 @@ python tools/target_preview.py --no-display     # 无头模式，自动保存 GI
 ### 7.2 3D 针孔相机投影可视化
 
 ```bash
-python tools/camera_3d_viewer.py
+conda run -n simulation python tools/camera_3d_viewer.py
 ```
 
 交互式 PyQt5 窗口，左侧 3D 场景（光轴、FOV 锥体、目标点），右侧 2D 传感器平面投影。
@@ -346,8 +346,8 @@ python tools/camera_3d_viewer.py
 ### 7.3 数据录制
 
 ```bash
-python -m tools.record_session --duration 10 --output output/data.csv
-python -m tools.record_session --duration 20 --output output/data.csv \
+conda run -n simulation python -m tools.record_session --duration 10 --output output/data.csv
+conda run -n simulation python -m tools.record_session --duration 20 --output output/data.csv \
     --control-program my_tracker:MyTracker --waypoints "(100,0,2),(50,30,1)"
 ```
 
@@ -356,9 +356,9 @@ python -m tools.record_session --duration 20 --output output/data.csv \
 ### 7.4 离线回放
 
 ```bash
-python -m tools.replay_session --input output/data.csv                                    # Noop（统计）
-python -m tools.replay_session --input output/data.csv --control-program my_tracker:MyTracker  # 测试自定义控制程序
-python -m tools.replay_session --input output/data.csv --control-program my_tracker:MyTracker --output output/replay.csv
+conda run -n simulation python -m tools.replay_session --input output/data.csv                                    # Noop（统计）
+conda run -n simulation python -m tools.replay_session --input output/data.csv --control-program my_tracker:MyTracker  # 测试自定义控制程序
+conda run -n simulation python -m tools.replay_session --input output/data.csv --control-program my_tracker:MyTracker --output output/replay.csv
 ```
 
 用预录制 CSV 数据驱动控制程序，无需跑完整仿真。输出每 tick 的命令数统计和详细回放结果。
@@ -375,17 +375,17 @@ python -m tools.replay_session --input output/data.csv --control-program my_trac
 
 ## 9. 运行与测试
 
-### 9.1 实体单元测试（220 个）
+### 9.1 实体单元测试（224 个）
 
 ```bash
 # 单独运行某个实体
-python -m unittest entities.target.tests.test_target_entity -v    # 64 tests
-python -m unittest entities.gimbal.tests.test_gimbal_entity -v    # 63 tests
-python -m unittest entities.camera.tests.test_camera_entity -v    # 67 tests
-python -m unittest entities.raspi.tests.test_raspi_entity -v      # 26 tests
+conda run -n simulation python -m unittest entities.target.tests.test_target_entity -v    # 64 tests
+conda run -n simulation python -m unittest entities.gimbal.tests.test_gimbal_entity -v    # 63 tests
+conda run -n simulation python -m unittest entities.camera.tests.test_camera_entity -v    # 67 tests
+conda run -n simulation python -m unittest entities.raspi.tests.test_raspi_entity -v      # 26 tests
 
 # 全部实体测试
-python -m unittest entities.target.tests.test_target_entity \
+conda run -n simulation python -m unittest entities.target.tests.test_target_entity \
     entities.gimbal.tests.test_gimbal_entity \
     entities.camera.tests.test_camera_entity \
     entities.raspi.tests.test_raspi_entity -v
@@ -394,27 +394,41 @@ python -m unittest entities.target.tests.test_target_entity \
 ### 9.2 主线回归
 
 ```bash
-python -m unittest discover -s tests -v
+conda run -n simulation python -m unittest discover -s tests -v
 ```
 
-### 9.3 组装冒烟
+### 9.3 端到端闭环基线测试
 
 ```bash
-python app.py --no-gui --mode offline --duration 1.0
+conda run -n simulation python -m unittest tests.test_e2e_baseline -v
 ```
 
-### 9.4 通过标准
+验证完整跟踪回路（Target → Gimbal → Camera → Raspi → Command → Gimbal）的稳态性能：
+- 跟踪率 ≥ 90%
+- 角度误差 RMS < 2.0°
+- 角度误差峰值 < 5.0°
+- 无发散（最后 10s 回归斜率 < 0.1 deg/s）
+- 含 20ms 延时闭环测试
 
-- 所有测试通过（220 单元 + 6 集成 = 226 total）
+### 9.4 组装冒烟
+
+```bash
+conda run -n simulation python app.py --no-gui --mode offline --duration 1.0
+```
+
+### 9.5 通过标准
+
+- 所有测试通过（224 单元 + 16 集成，含 8 个 e2e 基线测试 = 240 total）
+- 端到端闭环基线测试通过（跟踪率、角度误差、无发散）
 - 无 GUI 冒烟输出连续、无异常终止
 - 关键字段（yaw/pitch/u/v/in_fov/backlog）正常刷新
 
 ## 10. 实时仪表盘
 
 ```bash
-python app.py                                    # 默认 60 秒实时仿真
-python app.py --mode realtime --duration 120     # 2 分钟
-python app.py --delay-ms 20                      # 带 20ms 延时
+conda run -n simulation python app.py                                    # 默认 60 秒实时仿真
+conda run -n simulation python app.py --mode realtime --duration 120     # 2 分钟
+conda run -n simulation python app.py --delay-ms 20                      # 带 20ms 延时
 ```
 
 界面布局：
@@ -435,6 +449,7 @@ python app.py --delay-ms 20                      # 带 20ms 延时
 zoom_pid/
 ├─ app.py                          # 主入口（透传到 simulation.cli）
 ├─ config.py                       # 统一配置（*_cfg dataclass 单例 + MOTION_MODE_PARAMS 模式注册表）
+├─ baseline.py                     # 研究基线配置快照 + validate_baseline()
 ├─ simulation/                     # 应用编排层
 │  ├─ bootstrap.py                 # build_runtime / start_stack / load_control_program
 │  ├─ state_buffer.py              # UI 线程安全缓冲
@@ -454,13 +469,14 @@ zoom_pid/
 │  ├─ camera/                      # entity / model / control / client / tests（67 tests）
 │  ├─ target/                      # entity / model / client / tests（64 tests, 含 waypoint 模式）
 │  └─ raspi/                       # entity / model / pipeline / control_program / tracker / client / tests（26 tests）
-├─ tests/                          # 主线回归测试（6 tests）
+├─ tests/                          # 主线回归测试（16 tests，含 8 个端到端闭环基线测试）
 ├─ tools/
 │  ├─ target_preview.py            # 目标轨迹 2D 动画预览
 │  ├─ camera_3d_viewer.py          # 3D 针孔相机投影可视化
 │  ├─ record_session.py            # 仿真数据录制 → CSV
 │  ├─ replay_session.py            # CSV 离线回放驱动控制程序
 │  ├─ pid_tuner.py                 # PID 参数自动调优
+│  ├─ run_baseline.py              # 基线实验运行工具（输出 JSON）
 │  └─ config_editor.py             # 配置编辑器 GUI（实体导航式）
 ├─ docs/                           # 文档
 │  ├─ 使用手册.md

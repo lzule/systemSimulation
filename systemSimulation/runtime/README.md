@@ -218,5 +218,5 @@ Client 的 `get_state()` / `get_frame()` 最终也走锁内路径。
 主线测试：`tests/test_runtime_api.py`、`tests/test_digital_twin_runtime.py`
 
 ```bash
-python -m unittest discover -s tests -v
+conda run -n simulation python -m unittest discover -s tests -v
 ```

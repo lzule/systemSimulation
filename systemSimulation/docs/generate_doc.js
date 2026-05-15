@@ -383,7 +383,7 @@ function chapter3_camera() {
       "v = h/2                          // 垂直居中（1D 简化）",
       "in_fov = |alpha| <= fov_half     // 是否在视野内",
     ]),
-    p("信标渲染为 2D 高斯光斑（sigma = 3.2 px），叠加高斯噪声（std = 0.5）。"),
+    p("信标渲染为 2D 高斯光斑（sigma = 3.2 px），叠加高斯噪声（std = 2.0）。"),
 
     heading3("3.3.3 变焦控制"),
     p("ZoomController 采用一阶惯性模型（tau = 0.2s），支持两种模式："),
@@ -416,21 +416,22 @@ function chapter3_raspi() {
     heading2("3.4 Raspi 树莓派控制器"),
 
     heading3("3.4.1 概述"),
-    p("Raspi 是闭环控制的核心节点：接收观测，运行控制程序，输出命令。通过三级延时管线模拟真实硬件延迟。"),
+    p("Raspi 是闭环控制的核心节点：接收观测，运行控制程序，输出命令。通过单槽忙/闲延时管线模拟真实硬件延迟。"),
 
-    heading3("3.4.2 三级延时管线"),
-    p("DelayPipeline 使用三个最小堆实现三级延迟："),
+    heading3("3.4.2 单槽忙/闲延时管线"),
+    p("DelayPipeline 使用单槽忙/闲状态机实现延迟（IDLE → READING → PROCESSING → SENDING → IDLE）："),
     emptyLine(),
     makeTable(
-      ["阶段", "默认延迟", "说明"],
+      ["阶段", "状态", "说明"],
       [
-        ["观测获取", "image_read + state_read delay", "从 Runtime 读取观测的延迟"],
-        ["图像处理", "image_process_delay = 20ms", "控制程序处理观测的延迟"],
-        ["命令发送", "command_tx_delay", "命令传送到 Runtime 的延迟"],
+        ["IDLE", "空闲", "等待新帧，忙时拒绝新帧"],
+        ["READING", "观测获取", "从 Runtime 读取观测的延迟"],
+        ["PROCESSING", "图像处理", "控制程序处理观测的延迟"],
+        ["SENDING", "命令发送", "命令传送到 Runtime 的延迟"],
       ],
-      [2000, 3500, CONTENT_W - 5500]
+      [2000, 1500, CONTENT_W - 3500]
     ),
-    p("每级可独立配置延迟和抖动（高斯噪声，单侧 max(0, gauss(0, std))）。每帧的观测经过管线后才会被控制程序处理。"),
+    p("忙时不接受新帧，空闲时取最新帧，不积压。每级可独立配置延迟和抖动（高斯噪声，abs(gauss(0, std))）。每帧的观测经过管线后才会被控制程序处理。"),
 
     heading3("3.4.3 控制程序协议"),
     ...codeLines([
@@ -443,14 +444,14 @@ function chapter3_raspi() {
     p("BaselineTrackerProgram 实现简单的比例控制："),
     ...codeLines([
       "pixel_error = det.cx - cx",
-      "yaw_rate = clamp(kp * pixel_error, -max_rate, +max_rate)  // kp=0.08 dps/px",
+      "yaw_rate = clamp(kp * pixel_error, -max_rate, +max_rate)  // kp=1.1 dps/px",
       "若 |pixel_error| < deadband(2px), rate = 0",
       "若目标丢失, rate = lost_target_hold_rate(0)",
     ]),
     makeTable(
       ["参数", "默认值", "说明"],
       [
-        ["yaw_rate_kp", "0.08 dps/px", "比例增益"],
+        ["yaw_rate_kp", "1.1 dps/px", "比例增益"],
         ["max_yaw_rate", "60.0 dps", "角速度限幅"],
         ["deadband", "2.0 px", "死区"],
         ["lost_target_hold", "0.0 dps", "丢失目标保持速率"],
@@ -466,7 +467,7 @@ function chapter4() {
     heading1("第 4 章 配置系统设计"),
 
     heading2("4.1 配置结构"),
-    p("config.py 包含 10 个 dataclass 配置类，均为模块级单例："),
+    p("config.py 包含 11 个 dataclass 配置类，均为模块级单例："),
     makeTable(
       ["配置类", "实例名", "覆盖范围"],
       [
@@ -477,7 +478,7 @@ function chapter4() {
         ["ControlPreset", "control_preset_cfg", "PID 参数"],
         ["YawDisplayConfig", "yaw_display_cfg", "航向角显示模式"],
         ["RaspiConfig", "raspi_cfg", "启动延时"],
-        ["RaspiDelayConfig", "raspi_delay_cfg", "三级延时参数"],
+        ["RaspiDelayConfig", "raspi_delay_cfg", "延时参数（单槽忙/闲模型）"],
         ["TargetConfig", "target_cfg", "运动模式与参数"],
         ["SceneConfig", "scene_cfg", "场景、动画、绘图参数"],
       ],
@@ -571,7 +572,7 @@ function chapter5() {
     heading2("5.5 CLI 注入"),
     ...codeLines([
       "# 命令行注入：格式 module:Class",
-      "python app.py --control-program my_tracker:MyTracker --duration 10",
+      "conda run -n simulation python app.py --control-program my_tracker:MyTracker --duration 10",
       "",
       "# 代码注入：",
       "from simulation.bootstrap import build_runtime",
@@ -603,22 +604,22 @@ function chapter6() {
     heading2("6.2 典型运行场景"),
     ...codeLines([
       "# 无 GUI 快速验证",
-      'python app.py --no-gui --mode offline --duration 1.0',
+      'conda run -n simulation python app.py --no-gui --mode offline --duration 1.0',
       "",
       "# GUI 实时仿真",
-      "python app.py --mode realtime --duration 60",
+      "conda run -n simulation python app.py --mode realtime --duration 60",
       "",
       "# 带延时链路",
-      "python app.py --mode realtime --duration 30 --delay-ms 20",
+      "conda run -n simulation python app.py --mode realtime --duration 30 --delay-ms 20",
       "",
       "# 自定义控制程序",
-      "python app.py --no-gui --control-program my_tracker:MyTracker --duration 5",
+      "conda run -n simulation python app.py --no-gui --control-program my_tracker:MyTracker --duration 5",
       "",
       "# 航点轨迹",
-      'python app.py --no-gui --waypoints "(100,0,2),(80,30,1.5)" --duration 20',
+      'conda run -n simulation python app.py --no-gui --waypoints "(100,0,2),(80,30,1.5)" --duration 20',
       "",
       "# 随机运动 + 延时",
-      "python app.py --no-gui --target-type random_walk --delay-ms 15 --duration 20",
+      "conda run -n simulation python app.py --no-gui --target-type random_walk --delay-ms 15 --duration 20",
     ]),
 
     heading2("6.3 GUI 实时仪表盘"),
@@ -633,12 +634,12 @@ function chapter6() {
     makeTable(
       ["工具", "调用命令", "说明"],
       [
-        ["目标轨迹预览", "python tools/target_preview.py", "2D 动画预览目标运动轨迹"],
-        ["3D 相机投影", "python tools/camera_3d_viewer.py", "交互式 3D 针孔模型可视化"],
-        ["阶跃响应分析", "python tools/step_response.py", "实时云台控制工作台，分析阶跃响应"],
-        ["配置编辑器", "python tools/config_editor.py", "实体导航式 GUI 配置编辑"],
-        ["数据录制", "python -m tools.record_session", "仿真运行导出 CSV"],
-        ["离线回放", "python -m tools.replay_session", "CSV 回放驱动控制程序"],
+        ["目标轨迹预览", "conda run -n simulation python tools/target_preview.py", "2D 动画预览目标运动轨迹"],
+        ["3D 相机投影", "conda run -n simulation python tools/camera_3d_viewer.py", "交互式 3D 针孔模型可视化"],
+        ["阶跃响应分析", "conda run -n simulation python tools/step_response.py", "实时云台控制工作台，分析阶跃响应"],
+        ["配置编辑器", "conda run -n simulation python tools/config_editor.py", "实体导航式 GUI 配置编辑"],
+        ["数据录制", "conda run -n simulation python -m tools.record_session", "仿真运行导出 CSV"],
+        ["离线回放", "conda run -n simulation python -m tools.replay_session", "CSV 回放驱动控制程序"],
       ],
       [2000, 4000, CONTENT_W - 6000]
     ),
@@ -651,7 +652,7 @@ function chapter7() {
     heading1("第 7 章 测试与验证"),
 
     heading2("7.1 测试体系总览"),
-    p("项目包含 228 个单元测试 + 4 个集成测试，总计 232 个测试方法："),
+    p("项目包含 224 个单元测试 + 16 集成测试（含 8 个 e2e 基线测试），共 240 测试用例："),
     makeTable(
       ["实体 / 层", "测试文件", "测试数"],
       [
@@ -664,7 +665,8 @@ function chapter7() {
         ["集成", "tests/test_digital_twin_runtime.py", "2"],
         ["集成", "tests/test_runtime_api.py", "1"],
         ["集成", "tests/test_pid_tuner_smoke.py", "1"],
-        ["合计", "", "228"],
+        ["集成", "tests/test_e2e_baseline.py", "8"],
+        ["合计", "", "240"],
       ],
       [2800, 4800, CONTENT_W - 7600]
     ),
@@ -678,20 +680,20 @@ function chapter7() {
     heading2("7.3 运行命令"),
     ...codeLines([
       "# 全部实体测试",
-      "python -m unittest entities.target.tests.test_target_entity \\",
+      "conda run -n simulation python -m unittest entities.target.tests.test_target_entity \\",
       "    entities.gimbal.tests.test_gimbal_entity \\",
       "    entities.camera.tests.test_camera_entity \\",
       "    entities.raspi.tests.test_raspi_entity -v",
       "",
       "# 主线回归测试",
-      "python -m unittest discover -s tests -v",
+      "conda run -n simulation python -m unittest discover -s tests -v",
       "",
       "# 组装冒烟测试",
-      "python app.py --no-gui --mode offline --duration 1.0",
+      "conda run -n simulation python app.py --no-gui --mode offline --duration 1.0",
     ]),
 
     heading2("7.4 通过标准"),
-    bullet("所有测试通过（228 单元 + 4 集成 = 232 total）"),
+    bullet("所有测试通过（224 单元 + 16 集成，含 8 个 e2e 基线测试 = 240 total）"),
     bullet("无 GUI 冒烟输出连续、无异常终止"),
     bullet("关键字段（yaw/pitch/u/v/in_fov/backlog）正常刷新"),
     new Paragraph({ children: [new PageBreak()] }),
@@ -706,7 +708,7 @@ function chapter8() {
     ...codeLines([
       "systemSimulation/",
       "+-- app.py                          # 主入口（透传到 simulation.cli）",
-      "+-- config.py                       # 统一配置（10 个 dataclass + MOTION_MODE_PARAMS）",
+      "+-- config.py                       # 统一配置（11 个 dataclass + MOTION_MODE_PARAMS）",
       "+-- simulation/                     # 应用编排层",
       "|   +-- bootstrap.py                # build_runtime / start_stack",
       "|   +-- cli.py                      # 参数解析 + 入口分发",
@@ -735,7 +737,7 @@ function chapter8() {
     makeTable(
       ["模式", "应用场景"],
       [
-        ["dataclass 配置", "config.py 中 10 个配置类，类型安全 + 自动补全"],
+        ["dataclass 配置", "config.py 中 11 个配置类，类型安全 + 自动补全"],
         ["Protocol 接口", "ControlProgram 协议，鸭子类型控制程序"],
         ["Client 代理", "GimbalClient / CameraClient / RaspiClient 封装命令提交"],
         ["观察者回调", "Raspi 通过 submit_cmd 回调注入命令到 Runtime"],
@@ -797,11 +799,11 @@ function chapter8() {
         ["Gimbal 启动延时", "1.5 s", "GimbalEntity"],
         ["Camera 启动延时", "0.5 s", "CameraEntity"],
         ["Raspi 启动延时", "1.0 s", "RaspiConfig"],
-        ["默认图像处理延时", "0.02 s", "RaspiDelayConfig"],
+        ["默认图像处理延时", "0.015 s", "RaspiDelayConfig"],
         ["变焦时间常数", "0.2 s", "ZoomController"],
         ["变焦最大速率", "120 mm/s", "ZoomController"],
         ["场景时间步长", "0.005 s (200 Hz)", "SceneConfig"],
-        ["跟踪 kp", "0.08 dps/px", "TrackerTuning"],
+        ["跟踪 kp", "1.1 dps/px", "TrackerTuning"],
         ["跟踪死区", "2.0 px", "TrackerTuning"],
       ],
       [3000, 2200, CONTENT_W - 5200]

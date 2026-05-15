@@ -186,6 +186,6 @@ print(f"yaw={state['yaw_deg_display']:.1f} pitch={state['pitch_deg']:.1f}")
 ## 10. 测试
 
 ```bash
-python -m unittest discover -s entities\gimbal\tests -p "test_*.py" -v
-python -m unittest tests.test_gimbal_2axis_core -v
+conda run -n simulation python -m unittest discover -s entities\gimbal\tests -p "test_*.py" -v
+conda run -n simulation python -m unittest tests.test_gimbal_2axis_core -v
 ```

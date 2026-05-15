@@ -7,7 +7,7 @@
 树莓派控制侧实体，模拟真实嵌入式硬件的完整控制链路：
 
 - 有电源状态机（OFF → BOOTING → READY）
-- **三级延时管线**：观测读取 → 图像处理 → 命令发送，每级可配延时和抖动
+- **单槽延时状态机**：IDLE → READING → PROCESSING → SENDING → IDLE，模拟观测读取→图像处理→命令发送链路，各级可配延时和抖动。忙时不接受新帧，空闲时抓取最新帧，不排队旧帧
 - **可插拔控制程序**：通过 `ControlProgram` 协议实现控制逻辑与运行时解耦
 - **唯一通过回调提交命令的实体**：控制程序输出的命令通过 `submit_cmd` 回调注入 Runtime
 
@@ -17,9 +17,9 @@
 
 ```
 entities/raspi/
-├─ entity.py            # RaspiEntity + RaspiState
-├─ model.py             # RaspiDelayModel（封装 DelayPipeline）
-├─ delay_pipeline.py    # DelayPipeline（最小堆三级延时队列）
+├─ entity.py            # RaspiEntity + RaspiState（含单槽延时状态机调度）
+├─ model.py             # RaspiDelayModel（单槽 IDLE→READING→PROCESSING→SENDING 状态机）
+├─ delay_pipeline.py    # [遗留] DelayPipeline 三级堆队列（当前未使用，活跃实现在 model.py）
 ├─ control_program.py   # ControlProgram 协议 + NoopControlProgram
 ├─ tracker_program.py   # BaselineTrackerProgram + TrackerTuning
 ├─ client.py            # RaspiClient
@@ -33,7 +33,7 @@ entities/raspi/
 ```
 OFF ──power_on()──> BOOTING (1.0s) ──boot_remaining<=0──> READY
                                                         │
-BOOTING/READY ──power_off()──> OFF (同时重置 DelayPipeline)
+BOOTING/READY ──power_off()──> OFF (同时重置 RaspiDelayModel)
 ```
 
 ## 4. 配置参数
@@ -49,17 +49,17 @@ BOOTING/READY ──power_off()──> OFF (同时重置 DelayPipeline)
 
 | 参数 | 类型 | 默认值 | 含义 |
 |------|------|--------|------|
-| `image_read_delay_s` | float | `0.0` | 图像读取延时（秒） |
-| `image_process_delay_s` | float | `0.02` | 图像处理延时（秒） |
-| `state_read_delay_s` | float | `0.0` | 状态读取延时（秒） |
-| `command_tx_delay_s` | float | `0.0` | 命令发送延时（秒） |
-| `jitter_std_s` | float | `0.0` | 各级延时的抖动标准差（秒） |
+| `image_read_delay_s` | float | `0.005` | 图像读取延时（秒） |
+| `image_process_delay_s` | float | `0.015` | 图像处理延时（秒） |
+| `state_read_delay_s` | float | `0.003` | 状态读取延时（秒） |
+| `command_tx_delay_s` | float | `0.003` | 命令发送延时（秒） |
+| `jitter_std_s` | float | `0.001` | 各级延时的抖动标准差（秒） |
 
 ### TrackerTuning（基线跟踪参数）
 
 | 参数 | 类型 | 默认值 | 含义 |
 |------|------|--------|------|
-| `yaw_rate_kp_dps_per_px` | float | `0.08` | 像素误差→角速度的比例增益 |
+| `yaw_rate_kp_dps_per_px` | float | `1.1` | 像素误差→角速度的比例增益 |
 | `max_yaw_rate_dps` | float | `60.0` | 最大 Yaw 角速度 |
 | `deadband_px` | float | `2.0` | 死区（像素），小于此值归零 |
 | `lost_target_hold_rate_dps` | float | `0.0` | 目标丢失时的保持角速度 |
@@ -71,20 +71,28 @@ BOOTING/READY ──power_off()──> OFF (同时重置 DelayPipeline)
 
 ## 5. 内部模型详解
 
-### 5.1 延时管线 DelayPipeline
+### 5.1 延时模型 RaspiDelayModel
 
-基于最小堆的三级延时队列，模拟真实嵌入式系统的处理链路：
+`RaspiDelayModel`（`model.py`）是当前活跃的延时实现，采用**单槽忙/闲状态机**：
 
 ```
-_obs_heap (观测队列)  ──>  _proc_heap (处理队列)  ──>  _cmd_heap (命令队列)
+IDLE ──try_start()──> READING ──delay到期──> PROCESSING ──delay到期──> SENDING ──delay到期──> IDLE
+ │                        │                       │                        │
+ └─ 空闲，可接受新帧      └─ 正在读取观测         └─ 正在处理图像          └─ 正在发送命令
 ```
 
-每级提供：
-- `push_*(available_at, payload)` — 压入，`available_at = 当前时间 + 该级延时 + jitter`
-- `pop_ready_*(now)` — 弹出所有 `available_at <= now` 的项
-- `backlog_len()` — 三级队列总积压数
+核心设计：
+- **单槽**：任意时刻最多处理一帧观测，不会积累积压
+- **忙时丢弃**：状态机处于 READING/PROCESSING/SENDING 时，新到达的帧被直接跳过
+- **空闲时抓最新**：状态机回到 IDLE 后，`try_start()` 抓取当前最新 `world_obs` 开始处理
+- **jitter**：由 `abs(random.gauss(0, jitter_std_s))` 生成，确保非负
 
-jitter 由 `random.gauss(0, jitter_std_s)` 生成（`jitter_std_s=0` 时无抖动）。
+状态说明：
+- `try_start(timestamp, world_obs, obs_read_delay)` — 仅在 IDLE 时有效，记录观测并进入 READING
+- `tick(timestamp, process_delay, cmd_tx_delay, control_program, jitter_fn)` — 推进状态机，返回 `[(obs_capture_ts, cmds)]` 列表
+- `is_busy()` — 返回是否处于非 IDLE 状态
+
+> **注意**：`delay_pipeline.py` 中的 `DelayPipeline` 类是早期基于最小堆的三级队列实现，当前未被引用（遗留代码）。活跃延时逻辑在 `model.py` 的 `RaspiDelayModel` 中。
 
 ### 5.2 一个 tick 的完整处理流程
 
@@ -92,22 +100,33 @@ RaspiEntity 在 READY 状态下每个 tick 的执行步骤：
 
 ```
 1. 计算观测延时: obs_delay = max(image_read, state_read) + jitter
-   push_obs(now + obs_delay, world_obs)
+   delay_model.try_start(timestamp, world_obs, obs_delay)
+   → 仅当状态机为 IDLE 时抓取最新 world_obs，进入 READING 状态
+   → 如果状态机忙（READING/PROCESSING/SENDING），本帧被跳过
 
-2. pop_ready_obs(now) -> 对每条到期观测:
-   计算 process_available = now + image_process_delay + jitter
-   push_proc(process_available, {obs, ready_at})
+2. delay_model.tick(timestamp, process_delay, cmd_tx_delay, control_program, jitter_fn)
+   → 内部状态机推进：
 
-3. pop_ready_proc(now) -> 对每条到期处理结果:
-   记录 effective_obs_timestamp = obs.timestamp
-   调用 control_program.on_tick(obs) -> cmds
-   对每条 cmd: push_cmd(now + command_tx_delay + jitter, cmd)
+   a) READING 阶段到期:
+      → 转入 PROCESSING，设置 ready_at = timestamp + image_process_delay + jitter
 
-4. pop_ready_cmd(now) -> 对每条到期命令:
-   submit_cmd(cmd, now + runtime_dt)   -- 注入 Runtime 命令总线
+   b) PROCESSING 阶段到期:
+      → 调用 control_program.on_tick(obs) → cmds
+      → 记录 effective_obs_timestamp = obs_capture_ts
+      → 转入 SENDING，设置 ready_at = timestamp + command_tx_delay + jitter
+      → 返回 (obs_capture_ts, cmds) 给 entity
+
+   c) SENDING 阶段到期:
+      → 转回 IDLE，释放观测槽位
+
+3. 对 tick 返回的每条命令:
+   submit_cmd(cmd, timestamp + runtime_dt)   -- 注入 Runtime 命令总线
 ```
 
-**关键**：观测从进入到命令生效，经过三级延时。如果总延时 > 帧间隔，管线中会积累积压（`pipeline_backlog_len` 增大）。
+**关键特性**：
+- **单槽无积压**：状态机忙时新帧被丢弃，`pipeline_backlog_len` 最大为 1（忙时）或 0（空闲时）
+- **最新帧优先**：空闲时总是抓取当前最新的 `world_obs`，不会处理过时的排队帧
+- **观测陈旧度**：`last_process_latency_s` 反映从观测抓取到命令产出的实际耗时
 
 ### 5.3 ControlProgram 协议
 
@@ -156,12 +175,11 @@ Runtime 组装 world_obs
         v
 RaspiEntity.update(ts, world_obs, submit_cmd, dt)
         │
-   DelayPipeline
-   ├─ obs_heap (观测延时)
-   ├─ proc_heap (处理延时)
-   └─ cmd_heap (命令发送延时)
-        │
-   control_program.on_tick(obs) ──> list[Command]
+   RaspiDelayModel（单槽状态机）
+   ├─ IDLE: try_start() 抓取最新 world_obs → READING
+   ├─ READING: 延时到期 → PROCESSING
+   ├─ PROCESSING: control_program.on_tick(obs) → cmds → SENDING
+   └─ SENDING: 延时到期 → 回到 IDLE
         │
    submit_cmd(cmd, apply_at) ──> Runtime._submit_command_at
         │
@@ -175,7 +193,7 @@ RaspiEntity.update(ts, world_obs, submit_cmd, dt)
 | 方法 | 参数 | 说明 |
 |------|------|------|
 | `power_on(timestamp?)` | — | 上电，1.0s 后 READY |
-| `power_off(timestamp?)` | — | 关机，重置管线 |
+| `power_off(timestamp?)` | — | 关机，重置延时模型 |
 | `load_control_program(program)` | 实现 `on_tick` 的对象 | 装载控制程序 |
 | `set_delay_profile(**kwargs)` | 同 RaspiDelayConfig 字段名 | 动态修改延时参数 |
 | `get_delay_profile() -> dict` | — | 查询当前延时配置 |
@@ -211,7 +229,7 @@ rc.set_delay_profile(
 
 # 查看状态
 state = rc.get_state()
-print(f"backlog={state['pipeline_backlog_len']} "
+print(f"busy={state['pipeline_backlog_len']} "
       f"latency={state['last_process_latency_s']*1000:.1f}ms")
 ```
 
@@ -219,12 +237,12 @@ print(f"backlog={state['pipeline_backlog_len']} "
 
 | 问题 | 排查 |
 |------|------|
-| 命令发不出去 | 检查延时配置是否过大（管线积压），查看 `pipeline_backlog_len` |
+| 命令发不出去 | 检查延时配置是否过大（总延时超过 tick 间隔时帧被跳过），查看 `pipeline_backlog_len` 是否始终为 1 |
 | 控制程序收不到帧 | 检查 `obs["frame"]` 是否为 None（不应该，Camera 始终渲染帧） |
 | 帧是全黑的 | 目标不在视场内时帧全黑但 frame 不为 None；质心检测返回 `found=False` |
 | 延时太大导致跟踪失效 | 先用 0 延时跑通闭环，再逐步增加 |
 | `effective_obs_timestamp` 远小于当前时间 | 正常，表示观测陈旧（延时链路的效果） |
-| backlog 持续增长 | 延时总和 > tick 间隔，管线无法消化；减小延时或增大 dt |
+| backlog 始终为 1 不归零 | 延时总和 > tick 间隔，状态机永远来不及回到 IDLE；减小延时或增大 dt |
 | 控制程序报错 | 检查 `on_tick` 返回类型是否为 `list[Command]` |
 
 ## 9. 扩展点
@@ -255,7 +273,7 @@ class MyController:
                 # PD 控制
                 d_err = err - self.last_error
                 self.last_error = err
-                cmd_rate = 0.08 * err + 0.01 * d_err
+                cmd_rate = 1.1 * err + 0.01 * d_err
 
                 cmds.append(Command(
                     target="gimbal",
@@ -267,9 +285,9 @@ class MyController:
         return cmds
 ```
 
-### 9.2 添加延时级别
+### 9.2 自定义延时行为
 
-修改 `DelayPipeline` 增加第四级队列（例如网络传输延时）。
+如需更复杂的延时行为（如多帧排队、优先级调度），可替换 `RaspiDelayModel` 的实现。注意 `delay_pipeline.py` 中的 `DelayPipeline` 是遗留代码，如需多级队列行为需重新实现。
 
 ### 9.3 替换检测算法
 
@@ -278,5 +296,5 @@ class MyController:
 ## 10. 测试
 
 ```bash
-python -m unittest discover -s entities\raspi\tests -p "test_*.py" -v
+conda run -n simulation python -m unittest discover -s entities/raspi/tests -p "test_*.py" -v
 ```

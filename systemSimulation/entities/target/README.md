@@ -152,5 +152,5 @@ Config Editor 自动读取 `Literal` 类型生成下拉选项，并根据 `MOTIO
 ## 10. 测试
 
 ```bash
-python -m unittest discover -s entities\target\tests -p "test_*.py" -v
+conda run -n simulation python -m unittest discover -s entities\target\tests -p "test_*.py" -v
 ```
