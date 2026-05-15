@@ -2,6 +2,174 @@
 
 ---
 
+## 046-20260516-033500 阶段4计划 v5 口径补齐
+
+**目的**：补齐阶段 4 计划文档中两处会直接影响实现落地的一致性问题，避免实现阶段再次因口径不清出现分叉。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 文档版本升级为 v5，补充修订记录
+2. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 清理任务 A 架构图中已删除的 `reactive_baseline` 残留，改为“无预测，对应 baseline_rate_p 对照组”
+3. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 在 ATPStateMachineConfig 中新增 `search_rate_dps` 与 `reacquire_search_rate_dps`，冻结 SEARCH / REACQUIRE 扫描速率口径
+4. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 明确 research 模式开环扫描如何由步进、速率、停留时长换算执行，并补充 ACQUIRE 阶段“像素误差有限”的判定定义
+
+**验证结果**：
+1. 静态核对阶段 4 计划文档，确认已无 `reactive_baseline` 作为独立首轮算法的残留表述
+2. 静态核对阶段 4 计划文档，确认 SEARCH / REACQUIRE 扫描速率和 ACQUIRE 有效检测判定已明确写入
+
+---
+
+## 045-20260516-031500 阶段4计划 v4 评审修正
+
+**目的**：修正 Codex v3 版本中残留的 3 处问题。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 文档版本升级为 v4，补充修订记录
+2. 任务 C：移除 `reactive_baseline`（与任务 B 的 `baseline_rate_p` 概念重叠），明确 `baseline_rate_p` 同时充当"无预测"对照组；预测算法基线改为 alpha_beta_tracker 和 linear_kf_tracker 两种
+3. 任务 D 状态切换条件 2：将模糊的"目标连续可见且检测稳定"量化为"连续 `n_acquire_confirm` 帧检出且像素误差有限"
+4. 任务 D 配置参数表：新增 `n_acquire_confirm`（int, 默认 5）
+5. 任务 D 搜索策略：新增 research 模式下开环定时扫描说明（research 白名单无 gimbal 角度反馈，SEARCH 无法做闭环角度定位）
+6. §8.3 验收结果：调整为 4 算法 + 1 ATP 组合基线的结构，明确 baseline_rate_p 兼任无预测对照
+
+**验证结果**：
+1. 静态核对任务 C 与任务 B 无概念重叠
+2. 静态核对所有 ATP 状态切换条件均含量化参数
+3. 静态核对 research 模式下 SEARCH 策略可行性已说明
+
+---
+
+## 044-20260516-020500 阶段4计划文档一致性修订
+
+**目的**：修正阶段 4 计划文档中首轮 benchmark 覆盖范围和工况维度定义的两处前后不一致问题，避免后续实施时按错口径推进。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 文档版本升级为 v3，补充修订记录
+2. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 将 benchmark 维度中的“延时档位”改为“延时定义说明”，明确首轮正式 benchmark 直接使用 B1/B2/B3 完整工况组合，不再与独立 L0/L1/L2 交叉展开
+3. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 将首轮 research 验收结果由 60 组调整为 75 组，并补入 `atp_search_track_baseline`，使其与“至少交付 1 个带 ATP 状态机的搜索-跟踪组合基线”保持一致
+
+**验证结果**：
+1. 静态核对阶段 4 计划文档，确认首轮 benchmark 已覆盖 ATP 组合基线
+2. 静态核对阶段 4 计划文档，确认 B1/B2/B3 与独立延时维度的重复定义已消除
+
+---
+
+## 043-20260516-011500 阶段4计划文档落地
+
+**目的**：按项目流程先产出阶段 4 的执行前详细开发计划文档，明确树莓派程序层主导、ATP 状态机放在树莓派侧、默认不改底层模型的实施边界。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `docs/阶段4-算法基线建设/阶段4详细开发计划.md` — 新增阶段 4 详细开发计划，完整写明目标、范围、默认决策、任务拆分、涉及模块、风险点、验收标准和实施顺序
+2. `docs/阶段4-算法基线建设/README.md` — 新增阶段 4 目录说明，明确当前目录用途与核心文档
+3. `docs/低空场景无线光通信ATP开发文档.md` — 在阶段 4 标题下补充实施前详细计划文档路径，和前面阶段的文档入口保持一致
+
+**验证**：静态核对阶段 1 实验输出规范、阶段 4 主文档定义和当前代码接口，确认计划文档内容与项目现状一致，且未越过“计划确认前不实施代码”的阶段边界。
+
+---
+
+## 042-20260516-005500 阶段3总评审收口
+
+**目的**：对阶段3完整交付做总体评审，修复剩余实现风险并统一当前项目文档口径，为阶段4启动提供可信基线。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `entities/raspi/model.py` — 为 `buffer_policy` 增加合法值校验，非法策略明确报错，避免静默退化
+2. `entities/raspi/entity.py` — `set_delay_profile()` 对 `queue_capacity` 和 `control_rate_hz` 做归一化处理，避免负值配置进入运行链路
+3. `tests/test_delay_strategies.py` — 新增 2 个回归测试：非法 `buffer_policy` 报错、`set_delay_profile()` 对容量/采样率做归一化
+4. `docs/低空场景无线光通信ATP开发文档.md` — 将“当前系统技术现状”从阶段2前旧口径更新为阶段3完成后的真实状态，避免后续阶段被旧描述误导
+5. `README.md`、`entities/raspi/README.md`、`entities/camera/README.md`、`entities/raspi/control_program.py` — 同步更新阶段3后的观测模式、延时策略、航点示例和 `optional_gt` 可见性说明
+
+**验证**：
+1. `conda run -n simulation python -m unittest tests.test_delay_strategies tests.test_digital_twin_runtime tests.test_obs_filter -v` 通过（40/40）
+2. `conda run -n simulation python -m unittest discover -s tests -v` 通过（110/110）
+3. `conda run -n simulation python app.py --no-gui --mode offline --duration 1.0` 通过
+4. `conda run -n simulation python app.py --no-gui --mode offline --duration 2.0 --obs-mode research` 通过
+5. `conda run -n simulation python app.py --no-gui --mode offline --duration 2.0 --obs-mode realistic` 通过
+
+---
+
+## 041-20260515-224800 轮B审阅修复：近真实测量值接线与延时策略更新
+
+**目的**：审阅阶段3轮B落地结果时，修复近真实模式未真正使用量化测量值的问题，并修复延时配置更新对新增策略字段支持不完整的问题。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `runtime/digital_twin_runtime.py` — realistic 模式下，runtime 在传给 `ObsFilter` 前显式获取 `gimbal.get_measured_state()`，并补上 `mode` 字段，确保近真实模式真正读取量化后的云台角度而不是连续内部值
+2. `entities/raspi/entity.py` — `set_delay_profile()` 按字段实际类型更新配置，支持 `buffer_policy`（字符串）、`queue_capacity`（整数）、`control_rate_hz`（浮点）；更新后重建 `RaspiDelayModel` 并重置控制节拍
+3. `tests/test_digital_twin_runtime.py` — 新增回归测试，验证 realistic 模式下控制程序收到的是量化测量值
+4. `tests/test_delay_strategies.py` — 新增回归测试，验证 `set_delay_profile()` 可以正确切换 `buffer_policy/queue_capacity/control_rate_hz`
+
+**验证**：`conda run -n simulation python -m unittest tests.test_digital_twin_runtime tests.test_delay_strategies -v` 通过（17/17）。
+
+---
+
+## 040-20260516-001500 阶段3轮B实施：执行器真实性+延时策略
+
+**目的**：实现阶段3轮B，为云台添加编码器量化、静摩擦死区、参数偏差三项非理想行为，并扩展延时模型支持有限队列和多速率采样。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `config.py` — GimbalConfig新增3个参数（encoder_resolution_deg, static_friction_threshold_dps, tau_deviation_ratio）；RaspiDelayConfig新增3个参数（buffer_policy, queue_capacity, control_rate_hz）
+2. `entities/gimbal/model.py` — 静摩擦死区（静止时低速率命令被吸收）+ 参数偏差（tau初始化时随机偏差，运行中不变）
+3. `entities/gimbal/entity.py` — 新增get_measured_state()方法，返回编码器量化后的角度值，不影响get_state()的连续值
+4. `entities/raspi/model.py` — 改造RaspiDelayModel支持latest/fifo两种缓冲策略；fifo模式维护有限队列，队列满时丢弃最旧帧
+5. `entities/raspi/entity.py` — 多速率控制：control_rate_hz>0时只在控制tick接受新观测；pipeline_backlog_len包含队列长度
+6. `tests/test_gimbal_nonideal.py` — 新增13个测试（编码器量化 4+静摩擦 5+参数偏差 4）
+7. `tests/test_delay_strategies.py` — 新增13个测试（latest策略 4+fifo策略 5+多速率 4）
+
+**验证**：全量106个测试通过（原80+新增26），冒烟测试通过，默认参数下行为不变（向后兼容）。
+
+---
+
+## 039-20260515-223800 轮A审阅修复：obs_filter 真值泄漏与空帧兼容
+
+**目的**：审阅阶段3轮A落地结果时，修复 obs_filter 在研究/近真实模式下仍可能透出 `frame.optional_gt` 的问题，并修复空帧被错误替换为 `{}` 的兼容性问题。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `simulation/obs_filter.py` — research / realistic 模式下复制 `FramePacket` 时显式清空 `optional_gt`，避免通过 `frame` 继续泄漏真值投影；同时保留 `image` 和 `intrinsics` 的独立副本
+2. `simulation/obs_filter.py` — `frame is None` 时保持返回 `None`，不再替换为空字典，避免下游把“无帧”误当成“有对象但缺字段”
+3. `tests/test_obs_filter.py` — 新增 3 个回归测试：research 去除 `frame.optional_gt`、realistic 去除 `frame.optional_gt`、realistic 保持 `frame=None`
+
+**验证**：`conda run -n simulation python -m unittest tests.test_obs_filter -v` 通过（21/21）。
+
+---
+
+## 038-20260515-233000 阶段3轮A实施：感知真实性+obs_filter
+
+**目的**：实现阶段3轮A，为平台增加距离相关成像、亮度变化、偶发丢检三项感知真实性因素，以及obs_filter三模式控制器输入分离。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `config.py` — CameraConfig新增6个近真实参数（sigma_ref_distance_m, brightness_base, brightness_ref_distance_m, brightness_jitter_std, miss_detection_base_rate, miss_sigma_gain_px）；新增ObsConfig（obs_mode, encoder_noise_std_deg, gyro_noise_std_dps）+ obs_cfg单例
+2. `entities/camera/model.py` — render_beacon_frame增加distance_m参数，实现距离相关sigma（sigma_base/(1+d/ref)）、亮度衰减（brightness_base/(1+d/ref) + jitter）、偶发丢检（跳过blob渲染，输出低于检测阈值的背景帧）
+3. `entities/camera/entity.py` — _render_frame传递distance_m；update()中计算3D距离sqrt(x²+y²+z²)
+4. `simulation/obs_filter.py` — 新建ObsFilter类，实现debug（透传）/research（白名单过滤）/realistic（噪声注入+白名单）三种观测模式
+5. `runtime/digital_twin_runtime.py` — __init__接受obs_filter参数；step()中world_obs经obs_filter过滤后再传给raspi
+6. `simulation/bootstrap.py` — build_runtime()接受obs_mode参数，创建ObsFilter传给Runtime
+7. `simulation/types.py` — AppConfig增加obs_mode字段
+8. `simulation/cli.py` — CLI增加--obs-mode参数（debug/research/realistic）
+9. `simulation/headless.py` — 传递obs_mode给build_runtime()
+10. `simulation/gui/window.py` — GUI透传obs_mode
+11. `tools/record_session.py` — 录制工具兼容obs_mode
+12. `tests/test_near_real_imaging.py` — 新增12个测试（距离sigma 3+亮度变化 4+丢检 5）
+13. `tests/test_obs_filter.py` — 新增18个测试（debug 2+research 5+realistic 9+校验 2）
+
+**验证**：全量77个测试通过（原47+新增30），三种obs_mode冒烟测试通过（debug/research/realistic），默认参数下行为不变（向后兼容）。
+
+---
+
 ## 037-20260515-220200 阶段3计划落地边界补严
 
 **目的**：对阶段 3 计划做进一步落地性检查，补上两处实施时容易踩坑的边界约束。
