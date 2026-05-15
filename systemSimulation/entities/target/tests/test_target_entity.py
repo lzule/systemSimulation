@@ -93,9 +93,10 @@ class TestConstantVelocity(unittest.TestCase):
         self.model = TargetKinematics2D(self.cfg)
 
     def test_linear_position_after_one_step(self):
-        x, y = self.model.step(2.0)
+        x, y, z = self.model.step(2.0)
         self.assertAlmostEqual(x, 6.0)
         self.assertAlmostEqual(y, 8.0)
+        self.assertAlmostEqual(z, 0.0)
 
     def test_linear_position_after_many_steps(self):
         dt = 0.1
@@ -192,7 +193,7 @@ class TestSinusoidal(unittest.TestCase):
 
     def test_x_constant(self):
         for _ in range(20):
-            x, _ = self.model.step(0.1)
+            x, _, _ = self.model.step(0.1)
             self.assertAlmostEqual(x, 100.0)
 
     def test_y_at_quarter_period(self):
@@ -260,7 +261,7 @@ class TestSinusoidal(unittest.TestCase):
     def test_step_returns_position(self):
         pos = self.model.step(0.1)
         self.assertIsInstance(pos, tuple)
-        self.assertEqual(len(pos), 2)
+        self.assertEqual(len(pos), 3)
         self.assertAlmostEqual(pos[0], 100.0)
 
 
@@ -618,7 +619,7 @@ class TestEdgeCases(unittest.TestCase):
         cfg = TargetConfig(motion_type="constant_velocity",
                            velocity_x_mps=5.0, velocity_y_mps=5.0)
         m = TargetKinematics2D(cfg)
-        x, y = m.step(0.0)
+        x, y, z = m.step(0.0)
         self.assertAlmostEqual(x, cfg.initial_x_m)
         self.assertAlmostEqual(y, cfg.initial_y_m)
         # t still increments by 0
@@ -691,7 +692,7 @@ class TestEdgeCases(unittest.TestCase):
         )
         m = TargetKinematics2D(cfg)
         for _ in range(50):
-            x, y = m.step(0.1)
+            x, y, z = m.step(0.1)
             self.assertAlmostEqual(x, 50.0)
             self.assertAlmostEqual(y, 0.0)
             self.assertAlmostEqual(m.vy, 0.0)

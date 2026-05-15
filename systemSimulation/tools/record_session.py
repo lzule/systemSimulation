@@ -3,7 +3,7 @@
 用法:
     python -m tools.record_session --duration 10 --output output/record.csv
     python -m tools.record_session --duration 10 --output output/record.csv --control-program my_tracker:MyTracker
-    python -m tools.record_session --duration 10 --output output/record.csv --waypoints "(100,0,2),(80,30,1.5)"
+    python -m tools.record_session --duration 10 --output output/record.csv --waypoints "(100,0,50,2),(80,30,30,1.5)"
 """
 from __future__ import annotations
 
@@ -82,7 +82,12 @@ def main():
     parser.add_argument("--delay-ms", type=float, default=0.0, help="链路延时（毫秒）")
     parser.add_argument("--control-program", type=str, default="", help="控制程序 module:Class")
     parser.add_argument("--target-type", type=str, default="", help="目标运动类型")
-    parser.add_argument("--waypoints", type=str, default="", help='航点 "(x1,y1,s1),(x2,y2,s2)"')
+    parser.add_argument(
+        "--waypoints",
+        type=str,
+        default="",
+        help='航点 "(x1,y1,z1,s1),(x2,y2,z2,s2)"；兼容旧格式 "(x1,y1,s1)"（z 缺省为 0）',
+    )
     args = parser.parse_args()
 
     record_session(

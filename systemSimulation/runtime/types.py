@@ -87,7 +87,8 @@ class FramePacket:
 @dataclass
 class WorldSnapshot:
     timestamp: float
-    target: Dict[str, Any]   # x_m, y_m, bearing_deg, distance_m, vx_mps, vy_mps
+    target: Dict[str, Any]   # x_m, y_m, z_m, azimuth_deg, bearing_deg, elevation_deg,
+                             # distance_m, vx_mps, vy_mps, vz_mps
     gimbal: Dict[str, Any]   # power_state, mode, yaw_deg_internal, yaw_deg_display, pitch_deg,
                              # yaw_rate_dps, pitch_rate_dps, yaw_rate_ref_dps, angle_tick, rate_tick
     camera: Dict[str, Any]   # power_state, f_current_mm, f_target_mm, frame_id, in_fov, u_px, v_px

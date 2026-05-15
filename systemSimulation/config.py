@@ -29,6 +29,10 @@ class CameraConfig:
         return 2.0 * math.degrees(math.atan(self.sensor_w_mm / (2.0 * self.focal_length_mm)))
 
     @property
+    def fov_v_deg(self) -> float:
+        return 2.0 * math.degrees(math.atan(self.sensor_h_mm / (2.0 * self.focal_length_mm)))
+
+    @property
     def cx(self) -> float:
         return self.resolution_w / 2.0
 
@@ -98,6 +102,11 @@ class TrackerTuningConfig:
     max_yaw_rate_dps: float = 60.0
     deadband_px: float = 2.0
     lost_target_hold_rate_dps: float = 0.0
+
+    pitch_rate_kp_dps_per_px: float = 1.1
+    max_pitch_rate_dps: float = 60.0
+    deadband_v_px: float = 2.0
+
     enable_zoom_control: bool = False
     zoom_in_error_px: float = 40.0
     zoom_out_error_px: float = 120.0
@@ -110,30 +119,35 @@ class TargetConfig:
     motion_type: Literal["sinusoidal", "constant_velocity", "constant_accel", "random_walk", "waypoint"] = "sinusoidal"
     initial_x_m: float = 100.0
     initial_y_m: float = 0.0
+    initial_z_m: float = 0.0
 
     velocity_x_mps: float = 0.0
     velocity_y_mps: float = 1.5
+    velocity_z_mps: float = 0.0
 
     accel_x_mps2: float = 0.0
     accel_y_mps2: float = 0.3
+    accel_z_mps2: float = 0.0
 
     sin_amplitude_m: float = 15.0
     sin_frequency_hz: float = 0.2
+    sin_z_amplitude_m: float = 0.0
+    sin_z_frequency_hz: float = 0.0
 
     random_max_accel_mps2: float = 1.0
     random_damping: float = 0.98
     random_seed: int = 42
 
-    waypoints: list[tuple[float, float, float]] = None  # [(x, y, speed), ...], speed=0 表示悬停
+    waypoints: list[tuple[float, ...]] = None  # [(x, y, z, speed), ...], 兼容 (x, y, speed); speed=0 表示悬停
     waypoint_arrival_radius_m: float = 1.0
 
 
-# 模式 → 该模式专属参数字段（initial_x_m/initial_y_m 为公共字段，不在此列）
-# 添加新运动模式：1) 在 Literal 中加模式名  2) 在此加字段映射  3) 在 TargetKinematics2D 实现逻辑
+# 模式 → 该模式专属参数字段（initial_x_m/initial_y_m/initial_z_m 为公共字段，不在此列）
+# 添加新运动模式：1) 在 Literal 中加模式名  2) 在此加字段映射  3) 在 TargetKinematics3D 实现逻辑
 MOTION_MODE_PARAMS: dict[str, list[str]] = {
-    "sinusoidal": ["sin_amplitude_m", "sin_frequency_hz"],
-    "constant_velocity": ["velocity_x_mps", "velocity_y_mps"],
-    "constant_accel": ["velocity_x_mps", "velocity_y_mps", "accel_x_mps2", "accel_y_mps2"],
+    "sinusoidal": ["sin_amplitude_m", "sin_frequency_hz", "sin_z_amplitude_m", "sin_z_frequency_hz"],
+    "constant_velocity": ["velocity_x_mps", "velocity_y_mps", "velocity_z_mps"],
+    "constant_accel": ["velocity_x_mps", "velocity_y_mps", "velocity_z_mps", "accel_x_mps2", "accel_y_mps2", "accel_z_mps2"],
     "random_walk": ["random_max_accel_mps2", "random_damping", "random_seed"],
     "waypoint": ["waypoints", "waypoint_arrival_radius_m"],
 }

@@ -18,6 +18,10 @@ class TrackerTuning:
     deadband_px: float = 2.0
     lost_target_hold_rate_dps: float = 0.0
 
+    pitch_rate_kp_dps_per_px: float = 1.1
+    max_pitch_rate_dps: float = 60.0
+    deadband_v_px: float = 2.0
+
     enable_zoom_control: bool = False
     zoom_in_error_px: float = 40.0
     zoom_out_error_px: float = 120.0
@@ -30,13 +34,15 @@ class BaselineTrackerProgram:
 
     处理流程：
     1. 从 `obs` 中读取 `frame`，检测目标质心。
-    2. 计算像素误差 `pixel_error_x = u - cx`。
-    3. 比例映射为 yaw 角速度命令，并做限幅。
+    2. 计算像素误差 `pixel_error_x = u - cx`、`pixel_error_y = cy - v`。
+    3. 比例映射为 yaw/pitch 角速度命令，并做限幅。
     4. 输出云台命令；可选附加相机变焦命令。
 
     说明：
     - 命令中的 timestamp 使用观测时间戳。
     - runtime 采用 latest-wins，命令在下一 tick 生效。
+    - pixel_error_y = cy - det.cy：det.cy < cy（目标在画面上方）时为正，
+      对应 pitch_rate 为正（向上跟踪）。
     """
 
     def __init__(self, tuning: Optional[TrackerTuning] = None):
@@ -46,6 +52,9 @@ class BaselineTrackerProgram:
                 max_yaw_rate_dps=tracker_tuning_cfg.max_yaw_rate_dps,
                 deadband_px=tracker_tuning_cfg.deadband_px,
                 lost_target_hold_rate_dps=tracker_tuning_cfg.lost_target_hold_rate_dps,
+                pitch_rate_kp_dps_per_px=tracker_tuning_cfg.pitch_rate_kp_dps_per_px,
+                max_pitch_rate_dps=tracker_tuning_cfg.max_pitch_rate_dps,
+                deadband_v_px=tracker_tuning_cfg.deadband_v_px,
                 enable_zoom_control=tracker_tuning_cfg.enable_zoom_control,
                 zoom_in_error_px=tracker_tuning_cfg.zoom_in_error_px,
                 zoom_out_error_px=tracker_tuning_cfg.zoom_out_error_px,
@@ -54,8 +63,10 @@ class BaselineTrackerProgram:
             )
         self.tuning = tuning
         self.last_pixel_error_x: float = 0.0
+        self.last_pixel_error_y: float = 0.0
         self.last_detection_found: bool = False
         self.last_yaw_rate_cmd_dps: float = 0.0
+        self.last_pitch_rate_cmd_dps: float = 0.0
         self._last_zoom_cmd_ts: float = -1e9
 
     @staticmethod
@@ -111,23 +122,37 @@ class BaselineTrackerProgram:
         self.last_detection_found = bool(det.found)
         if not det.found or det.cx is None:
             yaw_rate_cmd_dps = self.tuning.lost_target_hold_rate_dps
+            pitch_rate_cmd_dps = self.tuning.lost_target_hold_rate_dps
             pixel_error_x = self.last_pixel_error_x
+            pixel_error_y = self.last_pixel_error_y
         else:
             cx = float(frame.intrinsics["cx"])
+            cy = float(frame.intrinsics["cy"])
+
+            # 水平像素误差
             pixel_error_x = float(det.cx) - cx
             if abs(pixel_error_x) < self.tuning.deadband_px:
                 pixel_error_x = 0.0
             yaw_rate_cmd_dps = self.tuning.yaw_rate_kp_dps_per_px * pixel_error_x
             yaw_rate_cmd_dps = self._clamp(yaw_rate_cmd_dps, -self.tuning.max_yaw_rate_dps, self.tuning.max_yaw_rate_dps)
 
+            # 垂直像素误差：cy - det.cy，目标在上方时为正
+            pixel_error_y = cy - float(det.cy)
+            if abs(pixel_error_y) < self.tuning.deadband_v_px:
+                pixel_error_y = 0.0
+            pitch_rate_cmd_dps = self.tuning.pitch_rate_kp_dps_per_px * pixel_error_y
+            pitch_rate_cmd_dps = self._clamp(pitch_rate_cmd_dps, -self.tuning.max_pitch_rate_dps, self.tuning.max_pitch_rate_dps)
+
         self.last_pixel_error_x = pixel_error_x
+        self.last_pixel_error_y = pixel_error_y
         self.last_yaw_rate_cmd_dps = yaw_rate_cmd_dps
+        self.last_pitch_rate_cmd_dps = pitch_rate_cmd_dps
 
         commands.append(
             Command(
                 target="gimbal",
                 action="set_rate_target",
-                payload={"yaw_rate": yaw_rate_cmd_dps, "pitch_rate": 0.0},
+                payload={"yaw_rate": yaw_rate_cmd_dps, "pitch_rate": pitch_rate_cmd_dps},
                 timestamp=timestamp,
                 source="raspi_tracker",
             )

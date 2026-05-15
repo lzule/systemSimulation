@@ -13,10 +13,12 @@ class ControlProgram(Protocol):
         {
             "timestamp": float,             # 仿真时间
             "target": {
-                "x_m": float, "y_m": float, # 目标位置（米）
-                "bearing_deg": float,        # 方位角
+                "x_m": float, "y_m": float, "z_m": float,  # 目标位置（米）
+                "azimuth_deg": float,        # 方位角
+                "bearing_deg": float,        # 方位角（别名，等同 azimuth_deg）
+                "elevation_deg": float,      # 俯仰角
                 "distance_m": float,         # 距离
-                "vx_mps": float, "vy_mps": float,  # 速度
+                "vx_mps": float, "vy_mps": float, "vz_mps": float,  # 速度
             },
             "gimbal": {
                 "power_state": str,          # OFF / BOOTING / READY

@@ -20,7 +20,8 @@ def _row_to_obs(row: dict) -> dict:
     obs = {"timestamp": float(row["timestamp"])}
     # target
     obs["target"] = {}
-    for k in ("x_m", "y_m", "bearing_deg", "distance_m"):
+    for k in ("x_m", "y_m", "z_m", "azimuth_deg", "bearing_deg", "elevation_deg",
+              "distance_m", "vx_mps", "vy_mps", "vz_mps"):
         key = f"target.{k}"
         if key in row and row[key] != "":
             obs["target"][k] = float(row[key])

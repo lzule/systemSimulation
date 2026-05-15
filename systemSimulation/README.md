@@ -13,16 +13,16 @@
 ### 1.1 四实体关系
 
 ```
-Target ──── target_state (x_m, y_m) ────┐
-                                        v
-Gimbal ─── gimbal_state (yaw_deg) ──> Camera ── frame + world_obs ──> Raspi
+Target ──── target_state (x_m, y_m, z_m) ────┐
+                                             v
+Gimbal ─── gimbal_state (yaw_deg, pitch_deg) ──> Camera ── frame + world_obs ──> Raspi
    ^                                                                   │
    └──────────── Command (set_rate_target, set_mode) ──────────────────┘
                      通过 Runtime 命令总线
 ```
 
-- **Target**：目标运动体，输出世界坐标 `(x, y)`
-- **Gimbal**：两轴云台，执行角速度/角度控制，输出姿态
+- **Target**：目标运动体，输出世界坐标 `(x, y, z)`
+- **Gimbal**：两轴云台，执行 yaw/pitch 角速度/角度控制，输出姿态
 - **Camera**：挂载在云台上的相机，根据目标方位和云台姿态成像
 - **Raspi**：树莓派控制器，从帧中检测目标，输出控制命令
 
@@ -42,7 +42,7 @@ Gimbal ─── gimbal_state (yaw_deg) ──> Camera ── frame + world_obs 
 
 ```
                       ┌─────────────── Target.update(dt, t) ──────────────┐
-                      │ 输出: TargetState {x_m, y_m, bearing_deg, distance_m}
+                      │ 输出: TargetState {x_m, y_m, z_m, azimuth_deg, elevation_deg, distance_m}
                       │
                       │    ┌────────── Gimbal.update(dt, t) ──────────────┐
                       │    │ 输入: Command (来自上 tick 的命令)
@@ -90,7 +90,7 @@ conda run -n simulation python app.py --no-gui --target-type constant_velocity -
 
 ### 3.1 Target → Camera：方位角传递
 
-Camera 在 `update()` 中用 target 的 `(x_m, y_m)` 计算目标方位角：
+Camera 在 `update()` 中用 target 的 `(x_m, y_m)` 计算目标方位角，用 `(z_m, 水平距离)` 计算俯仰角：
 
 ```python
 bearing = math.atan2(target_state["y_m"], target_state["x_m"])
@@ -107,7 +107,9 @@ yaw = math.radians(gimbal_state["yaw_deg_internal"])
 alpha = (bearing - yaw + π) % (2π) - π   # 归一化到 [-π, π]
 ```
 
-alpha 决定目标在图像中的像素位置：`u = f_px * tan(alpha) + w/2`。
+alpha 决定目标在图像中的水平像素位置：`u = f_px * tan(alpha) + w/2`。
+
+同样地，垂直偏差角 `beta = elevation - pitch` 决定垂直像素位置：`v = cy - f_px * tan(beta)`。
 
 ### 3.3 Camera → Raspi：帧与观测传递
 
@@ -139,9 +141,9 @@ Raspi.on_tick(obs) → cmds → 单槽延时管线(IDLE→READING→PROCESSING�
 典型的闭环路径（基线跟踪）：
 
 ```
-帧中检测目标质心 → 计算像素误差 (u - cx)
-    → 比例映射 yaw_rate = Kp * pixel_error
-    → Command(gimbal, set_rate_target, yaw_rate)
+帧中检测目标质心 → 计算像素误差 (u - cx, cy - v)
+    → 比例映射 yaw_rate/pitch_rate = Kp * pixel_error
+    → Command(gimbal, set_rate_target, yaw_rate, pitch_rate)
     → Gimbal 转动 → Camera 帧变化 → 循环
 ```
 
@@ -263,11 +265,14 @@ class MyTracker:
             return cmds
 
         cx = float(frame.intrinsics["cx"])
-        err = det.cx - cx
-        yaw_rate = max(-60.0, min(60.0, self.kp * err))
+        cy = float(frame.intrinsics["cy"])
+        err_x = det.cx - cx
+        err_y = cy - det.cy
+        yaw_rate = max(-60.0, min(60.0, self.kp * err_x))
+        pitch_rate = max(-60.0, min(60.0, self.kp * err_y))
 
         cmds.append(Command(target="gimbal", action="set_rate_target",
-                            payload={"yaw_rate": yaw_rate, "pitch_rate": 0.0}, timestamp=ts))
+                            payload={"yaw_rate": yaw_rate, "pitch_rate": pitch_rate}, timestamp=ts))
         return cmds
 ```
 
@@ -324,7 +329,7 @@ runtime.raspi_client.set_delay_profile(
 
 ## 7. 可视化工具
 
-### 7.1 目标轨迹预览（2D 动画）
+### 7.1 目标轨迹预览（3D 动画）
 
 ```bash
 conda run -n simulation python tools/target_preview.py                  # 交互式预览
@@ -332,7 +337,7 @@ conda run -n simulation python tools/target_preview.py --save-gif       # 结束
 conda run -n simulation python tools/target_preview.py --no-display     # 无头模式，自动保存 GIF
 ```
 
-显示目标在 2D 世界坐标中的运动轨迹、速度矢量、方位角和距离曲线。
+显示目标在世界坐标中的运动轨迹（XY 平面）、速度矢量、方位角/俯仰角和 3D 距离曲线。
 
 ### 7.2 3D 针孔相机投影可视化
 
@@ -467,7 +472,7 @@ zoom_pid/
 ├─ entities/
 │  ├─ gimbal/                      # entity / model / control / client / tests（63 tests）
 │  ├─ camera/                      # entity / model / control / client / tests（67 tests）
-│  ├─ target/                      # entity / model / client / tests（64 tests, 含 waypoint 模式）
+│  ├─ target/                      # entity / model / client / tests（64 tests, 3D 运动学, 含 waypoint 模式）
 │  └─ raspi/                       # entity / model / pipeline / control_program / tracker / client / tests（26 tests）
 ├─ tests/                          # 主线回归测试（16 tests，含 8 个端到端闭环基线测试）
 ├─ tools/
@@ -491,6 +496,6 @@ zoom_pid/
 
 - 新功能优先落在 `entities/*` 与 `runtime/*`
 - `config.py` 仅保留主线配置，旧链路配置已清除
-- 添加新运动模式：在 `motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics2D` 实现。Config Editor 自动读取。
+- 添加新运动模式：在 `motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics3D` 实现。Config Editor 自动读取。
 - 每次迭代必须更新 `workspace_meta/plan_logs/latest_plan.md` 与 `history.md`
 - 修改实体代码时，同步更新对应实体的 README.md

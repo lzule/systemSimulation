@@ -56,7 +56,7 @@ class AppConfig:
     no_gui: bool
     control_program_path: str = ""      # "module:Class" 格式，空=默认 BaselineTrackerProgram
     target_type: str = ""               # 空=使用 config 默认
-    waypoints: str = ""                 # "(x1,y1,s1),(x2,y2,s2)" 格式，空=使用 config 默认
+    waypoints: str = ""                 # "(x1,y1,z1,s1),(x2,y2,z2,s2)" 或 "(x1,y1,s1)"（z缺省为0），空=使用 config 默认
 
 
 @dataclass

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import math
 from dataclasses import dataclass
@@ -94,15 +94,18 @@ class CameraEntity:
     def _focal_px(self) -> float:
         return self.imaging.focal_px(self.f_current_mm)
 
-    def _fov_half_rad(self) -> float:
-        return self.imaging.fov_half_rad(self.f_current_mm)
+    def _fov_h_half_rad(self) -> float:
+        return self.imaging.fov_h_half_rad(self.f_current_mm)
+
+    def _fov_v_half_rad(self) -> float:
+        return self.imaging.fov_v_half_rad(self.f_current_mm)
 
     def _update_zoom(self, dt: float) -> None:
         self.f_current_mm = self.zoom_ctrl.update(self.f_current_mm, self.f_target_mm, self.zoom_rate_cmd_mmps, dt)
         self.f_current_mm = float(np.clip(self.f_current_mm, self.cfg.focal_min_mm, self.cfg.focal_max_mm))
 
-    def _render_frame(self, alpha_rad: float, timestamp: float) -> Tuple[np.ndarray, bool, float, float]:
-        return self.imaging.render_beacon_frame(alpha_rad, self.f_current_mm, timestamp)
+    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float) -> Tuple[np.ndarray, bool, float, float]:
+        return self.imaging.render_beacon_frame(alpha_rad, beta_rad, self.f_current_mm, timestamp)
 
     def update(self, dt: float, timestamp: float, target_state: Dict[str, float], gimbal_state: Dict[str, float]) -> CameraState:
         if self.power_state == POWER_BOOTING:
@@ -116,11 +119,21 @@ class CameraEntity:
         if self.power_state == POWER_READY:
             self._update_zoom(dt)
 
-            bearing = math.atan2(target_state["y_m"], target_state["x_m"])
+            # 水平偏差角 alpha = azimuth - yaw
+            azimuth = math.atan2(target_state["y_m"], target_state["x_m"])
             yaw = math.radians(gimbal_state["yaw_deg_internal"])
-            alpha = (bearing - yaw + math.pi) % (2.0 * math.pi) - math.pi
+            alpha = (azimuth - yaw + math.pi) % (2.0 * math.pi) - math.pi
 
-            frame, in_fov, u_px, v_px = self._render_frame(alpha, timestamp)
+            # 垂直偏差角 beta = elevation - pitch
+            x = target_state["x_m"]
+            y = target_state["y_m"]
+            z = target_state.get("z_m", 0.0)
+            horizontal_dist = math.sqrt(x * x + y * y)
+            elevation = math.atan2(z, horizontal_dist)
+            pitch = math.radians(gimbal_state["pitch_deg"])
+            beta = elevation - pitch
+
+            frame, in_fov, u_px, v_px = self._render_frame(alpha, beta, timestamp)
             intrinsics = {
                 "f_mm": self.f_current_mm,
                 "f_px": self._focal_px(),

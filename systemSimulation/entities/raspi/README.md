@@ -11,6 +11,8 @@
 - **可插拔控制程序**：通过 `ControlProgram` 协议实现控制逻辑与运行时解耦
 - **唯一通过回调提交命令的实体**：控制程序输出的命令通过 `submit_cmd` 回调注入 Runtime
 
+> **阶段2升级**：基线跟踪控制程序（BaselineTrackerProgram）已从单轴（仅 yaw）升级为双轴（yaw + pitch）。pitch_rate 不再恒为 0，而是由 v 方向像素误差驱动，与 yaw 轴采用相同的比例控制结构。TrackerTuning 新增 pitch 相关参数。
+
 核心职责：接收全量 `world_obs`，经过延时处理后调用控制程序，将产出的命令注入 Runtime 命令总线。
 
 ## 2. 文件结构
@@ -59,8 +61,10 @@ BOOTING/READY ──power_off()──> OFF (同时重置 RaspiDelayModel)
 
 | 参数 | 类型 | 默认值 | 含义 |
 |------|------|--------|------|
-| `yaw_rate_kp_dps_per_px` | float | `1.1` | 像素误差→角速度的比例增益 |
+| `yaw_rate_kp_dps_per_px` | float | `1.1` | 像素误差→角速度的比例增益（yaw 轴） |
 | `max_yaw_rate_dps` | float | `60.0` | 最大 Yaw 角速度 |
+| `pitch_rate_kp_dps_per_px` | float | `1.1` | 像素误差→角速度的比例增益（pitch 轴，阶段2新增） |
+| `max_pitch_rate_dps` | float | `60.0` | 最大 Pitch 角速度（阶段2新增） |
 | `deadband_px` | float | `2.0` | 死区（像素），小于此值归零 |
 | `lost_target_hold_rate_dps` | float | `0.0` | 目标丢失时的保持角速度 |
 | `enable_zoom_control` | bool | `False` | 是否启用自动变焦 |
@@ -151,17 +155,23 @@ class ControlProgram(Protocol):
 
 默认装载的基线跟踪控制程序，处理流程：
 
+> **阶段2升级**：跟踪控制已从单轴升级为双轴，pitch_rate 不再恒为 0，而是由 v 方向像素误差驱动。
+
 ```
 1. 确保云台处于 RATE_MODE（如不是则发送 set_mode 命令）
 2. 从 frame.image 中检测光斑质心（detect_beacon_centroid）
-3. 计算像素误差: pixel_error_x = det.cx - cx（cx 来自相机内参）
-4. 死区处理: |error| < deadband_px 时归零
-5. 比例映射: yaw_rate_cmd = kp * pixel_error_x，限幅到 [-max, +max]
-6. 输出 set_rate_target(yaw_rate_cmd, 0) 命令
+3. 计算双轴像素误差:
+   - pixel_error_x = det.cx - cx（水平方向，cx 来自相机内参）
+   - pixel_error_y = det.cy - cy（垂直方向，cy 来自相机内参，阶段2新增）
+4. 死区处理: |error| < deadband_px 时归零（双轴独立判断）
+5. 比例映射:
+   - yaw_rate_cmd = kp * pixel_error_x，限幅到 [-max_yaw_rate, +max_yaw_rate]
+   - pitch_rate_cmd = kp * pixel_error_y，限幅到 [-max_pitch_rate, +max_pitch_rate]
+6. 输出 set_rate_target(yaw_rate_cmd, pitch_rate_cmd) 命令
 7. [可选] 根据误差大小自动变焦
 ```
 
-**丢失目标处理**：检测不到目标时，输出 `lost_target_hold_rate_dps` 作为维持角速度（默认 0，即停止跟踪）。
+**丢失目标处理**：检测不到目标时，输出 `lost_target_hold_rate_dps` 作为两轴的维持角速度（默认 0，即停止跟踪）。
 
 ## 6. 数据流
 

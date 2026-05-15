@@ -16,11 +16,11 @@ from config import CameraConfig
 # ---------------------------------------------------------------------------
 
 def _default_target():
-    return {"x_m": 100.0, "y_m": 0.0}
+    return {"x_m": 100.0, "y_m": 0.0, "z_m": 0.0}
 
 
 def _default_gimbal():
-    return {"yaw_deg_internal": 0.0}
+    return {"yaw_deg_internal": 0.0, "pitch_deg": 0.0}
 
 
 def _boot_camera(cam: CameraEntity, ts: float = 0.0, dt: float = 0.01) -> None:
@@ -311,18 +311,18 @@ class TestImagingModel(unittest.TestCase):
         expected = 50.0 / pixel_size
         self.assertAlmostEqual(self.model.focal_px(50.0), expected, places=3)
 
-    def test_fov_half_rad_at_default(self):
+    def test_fov_h_half_rad_at_default(self):
         """fov_half = atan(sensor_w / (2 * f_mm))."""
         expected = math.atan(self.cfg.sensor_w_mm / (2.0 * 12.0))
-        self.assertAlmostEqual(self.model.fov_half_rad(12.0), expected, places=6)
+        self.assertAlmostEqual(self.model.fov_h_half_rad(12.0), expected, places=6)
 
-    def test_fov_half_rad_at_200mm(self):
+    def test_fov_h_half_rad_at_200mm(self):
         expected = math.atan(self.cfg.sensor_w_mm / (2.0 * 200.0))
-        self.assertAlmostEqual(self.model.fov_half_rad(200.0), expected, places=6)
+        self.assertAlmostEqual(self.model.fov_h_half_rad(200.0), expected, places=6)
 
     def test_fov_shrinks_with_longer_focal(self):
-        fov_short = self.model.fov_half_rad(4.4)
-        fov_long = self.model.fov_half_rad(200.0)
+        fov_short = self.model.fov_h_half_rad(4.4)
+        fov_long = self.model.fov_h_half_rad(200.0)
         self.assertGreater(fov_short, fov_long)
 
 
@@ -338,27 +338,27 @@ class TestFOVCheck(unittest.TestCase):
 
     def test_target_inside_fov(self):
         """Small alpha within fov_half should be in FOV."""
-        fov_half = self.model.fov_half_rad(12.0)
-        _, in_fov, _, _ = self.model.render_beacon_frame(fov_half * 0.5, 12.0, 0.0)
+        fov_half = self.model.fov_h_half_rad(12.0)
+        _, in_fov, _, _ = self.model.render_beacon_frame(fov_half * 0.5, 0.0, 12.0, 0.0)
         self.assertTrue(in_fov)
 
     def test_target_at_fov_edge(self):
-        """Target at exactly fov_half_rad is still in FOV (<=)."""
-        fov_half = self.model.fov_half_rad(12.0)
-        _, in_fov, _, _ = self.model.render_beacon_frame(fov_half, 12.0, 0.0)
+        """Target at exactly fov_h_half_rad is still in FOV (<=)."""
+        fov_half = self.model.fov_h_half_rad(12.0)
+        _, in_fov, _, _ = self.model.render_beacon_frame(fov_half, 0.0, 12.0, 0.0)
         self.assertTrue(in_fov)
 
     def test_target_outside_fov(self):
         """Alpha beyond fov_half means out of FOV."""
-        fov_half = self.model.fov_half_rad(12.0)
-        _, in_fov, u_px, v_px = self.model.render_beacon_frame(fov_half * 2.0, 12.0, 0.0)
+        fov_half = self.model.fov_h_half_rad(12.0)
+        _, in_fov, u_px, v_px = self.model.render_beacon_frame(fov_half * 2.0, 0.0, 12.0, 0.0)
         self.assertFalse(in_fov)
         self.assertTrue(math.isnan(u_px))
         self.assertTrue(math.isnan(v_px))
 
     def test_negative_alpha_outside_fov(self):
-        fov_half = self.model.fov_half_rad(12.0)
-        _, in_fov, _, _ = self.model.render_beacon_frame(-fov_half * 2.0, 12.0, 0.0)
+        fov_half = self.model.fov_h_half_rad(12.0)
+        _, in_fov, _, _ = self.model.render_beacon_frame(-fov_half * 2.0, 0.0, 12.0, 0.0)
         self.assertFalse(in_fov)
 
 
@@ -374,7 +374,7 @@ class TestPixelCoordinateMapping(unittest.TestCase):
 
     def test_u_px_for_zero_alpha(self):
         """At alpha=0, u_px should be at image center (w/2)."""
-        _, in_fov, u_px, v_px = self.model.render_beacon_frame(0.0, 12.0, 0.0)
+        _, in_fov, u_px, v_px = self.model.render_beacon_frame(0.0, 0.0, 12.0, 0.0)
         self.assertTrue(in_fov)
         self.assertAlmostEqual(u_px, self.cfg.resolution_w / 2.0, places=2)
         self.assertAlmostEqual(v_px, self.cfg.resolution_h / 2.0, places=2)
@@ -385,16 +385,16 @@ class TestPixelCoordinateMapping(unittest.TestCase):
         f_mm = 12.0
         focal_px = self.model.focal_px(f_mm)
         expected_u = focal_px * math.tan(alpha) + self.cfg.resolution_w / 2.0
-        _, in_fov, u_px, _ = self.model.render_beacon_frame(alpha, f_mm, 0.0)
+        _, in_fov, u_px, _ = self.model.render_beacon_frame(alpha, 0.0, f_mm, 0.0)
         self.assertTrue(in_fov)
         self.assertAlmostEqual(u_px, expected_u, places=2)
 
     def test_v_px_always_center(self):
-        """v_px is always h/2 (1D beacon on the horizontal axis)."""
+        """v_px is h/2 when beta=0 (target on the horizontal plane)."""
         for alpha in [0.0, 0.02, -0.03, 0.1]:
-            fov_half = self.model.fov_half_rad(12.0)
+            fov_half = self.model.fov_h_half_rad(12.0)
             if abs(alpha) <= fov_half:
-                _, in_fov, _, v_px = self.model.render_beacon_frame(alpha, 12.0, 0.0)
+                _, in_fov, _, v_px = self.model.render_beacon_frame(alpha, 0.0, 12.0, 0.0)
                 self.assertAlmostEqual(v_px, self.cfg.resolution_h / 2.0, places=2)
 
     def test_u_px_for_negative_alpha(self):
@@ -402,7 +402,7 @@ class TestPixelCoordinateMapping(unittest.TestCase):
         f_mm = 12.0
         focal_px = self.model.focal_px(f_mm)
         expected_u = focal_px * math.tan(alpha) + self.cfg.resolution_w / 2.0
-        _, in_fov, u_px, _ = self.model.render_beacon_frame(alpha, f_mm, 0.0)
+        _, in_fov, u_px, _ = self.model.render_beacon_frame(alpha, 0.0, f_mm, 0.0)
         self.assertTrue(in_fov)
         self.assertAlmostEqual(u_px, expected_u, places=2)
 
@@ -417,7 +417,7 @@ class TestDetectBeaconCentroid(unittest.TestCase):
         """Render a frame with beacon in FOV and detect its centroid."""
         model = CameraImagingModel(CameraConfig())
         alpha = 0.0  # centered
-        image, in_fov, u_gt, v_gt = model.render_beacon_frame(alpha, 12.0, 0.0)
+        image, in_fov, u_gt, v_gt = model.render_beacon_frame(alpha, 0.0, 12.0, 0.0)
         self.assertTrue(in_fov)
         det = detect_beacon_centroid(image, threshold=100)
         self.assertTrue(det.found)
@@ -451,10 +451,10 @@ class TestDetectBeaconCentroid(unittest.TestCase):
         """Beacon at non-zero alpha should have off-center cx."""
         model = CameraImagingModel(CameraConfig())
         alpha = 0.1  # non-trivial angle
-        fov_half = model.fov_half_rad(12.0)
+        fov_half = model.fov_h_half_rad(12.0)
         if abs(alpha) > fov_half:
             self.skipTest("alpha outside FOV for this config")
-        image, in_fov, u_gt, v_gt = model.render_beacon_frame(alpha, 12.0, 0.0)
+        image, in_fov, u_gt, v_gt = model.render_beacon_frame(alpha, 0.0, 12.0, 0.0)
         if not in_fov:
             self.skipTest("alpha not in FOV")
         det = detect_beacon_centroid(image, threshold=100)
@@ -524,7 +524,7 @@ class TestFrameGeneration(unittest.TestCase):
     def test_optional_gt_absent_when_not_in_fov(self):
         """When target is outside FOV, optional_gt should be None."""
         # Use extreme gimbal yaw to push alpha out of FOV
-        self.cam.update(0.01, 1.0, _default_target(), {"yaw_deg_internal": 180.0})
+        self.cam.update(0.01, 1.0, _default_target(), {"yaw_deg_internal": 180.0, "pitch_deg": 0.0})
         frame = self.cam.get_frame()
         # gimbal pointing at 180 deg, target at 0 deg → alpha ~ pi → way outside FOV
         self.assertIsNone(frame.optional_gt)
@@ -640,19 +640,19 @@ class TestAlphaComputation(unittest.TestCase):
 
     def test_alpha_zero_when_aligned(self):
         """Target along x-axis with gimbal yaw=0 → alpha ~0, target in FOV."""
-        state = self._run_single_update({"x_m": 100.0, "y_m": 0.0}, {"yaw_deg_internal": 0.0})
+        state = self._run_single_update({"x_m": 100.0, "y_m": 0.0, "z_m": 0.0}, {"yaw_deg_internal": 0.0, "pitch_deg": 0.0})
         self.assertTrue(state["in_fov"])
 
     def test_alpha_positive_when_target_right(self):
         """Target at positive y with gimbal at yaw=0 → positive bearing."""
-        state = self._run_single_update({"x_m": 100.0, "y_m": 10.0}, {"yaw_deg_internal": 0.0})
+        state = self._run_single_update({"x_m": 100.0, "y_m": 10.0, "z_m": 0.0}, {"yaw_deg_internal": 0.0, "pitch_deg": 0.0})
         self.assertTrue(state["in_fov"])
         # u_px should be > center (target is to the right)
         self.assertGreater(state["u_px"], 320.0)
 
     def test_alpha_negative_when_target_left(self):
         """Target at negative y with gimbal at yaw=0 → negative bearing."""
-        state = self._run_single_update({"x_m": 100.0, "y_m": -10.0}, {"yaw_deg_internal": 0.0})
+        state = self._run_single_update({"x_m": 100.0, "y_m": -10.0, "z_m": 0.0}, {"yaw_deg_internal": 0.0, "pitch_deg": 0.0})
         self.assertTrue(state["in_fov"])
         # u_px should be < center (target is to the left)
         self.assertLess(state["u_px"], 320.0)
@@ -660,9 +660,9 @@ class TestAlphaComputation(unittest.TestCase):
     def test_gimbal_offset_compensates(self):
         """If gimbal points at target bearing, alpha ~0 and target is centered."""
         # Target bearing = atan2(10, 100) ~ 5.71 deg
-        target = {"x_m": 100.0, "y_m": 10.0}
+        target = {"x_m": 100.0, "y_m": 10.0, "z_m": 0.0}
         bearing_deg = math.degrees(math.atan2(10.0, 100.0))
-        state = self._run_single_update(target, {"yaw_deg_internal": bearing_deg})
+        state = self._run_single_update(target, {"yaw_deg_internal": bearing_deg, "pitch_deg": 0.0})
         self.assertTrue(state["in_fov"])
         self.assertAlmostEqual(state["u_px"], 320.0, delta=2.0)
 

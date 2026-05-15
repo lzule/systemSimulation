@@ -245,28 +245,30 @@ function chapter3_target() {
     heading2("3.1 Target 目标运动体"),
 
     heading3("3.1.1 概述"),
-    p("Target 是只读的被动实体——不接受任何命令，从创建起即活跃，无电源状态机。其他实体依赖 target_state 中的 x_m, y_m 计算方位角。"),
+    p("Target 是只读的被动实体——不接受任何命令，从创建起即活跃，无电源状态机。其他实体依赖 target_state 中的 x_m, y_m, z_m 计算方位角和俯仰角。"),
 
     heading3("3.1.2 五种运动模式"),
-    p("核心方法 TargetKinematics2D.step(dt) -> (x, y)，根据 motion_type 分支："),
+    p("核心方法 TargetKinematics3D.step(dt) -> (x, y, z)，根据 motion_type 分支："),
     emptyLine(),
 
     makeTable(
       ["模式", "公式", "使用参数"],
       [
-        ["constant_velocity", "x += vx*dt, y += vy*dt", "velocity_x/y_mps"],
-        ["constant_accel", "v += a*dt, x += v*dt", "velocity + accel_x/y_mps2"],
-        ["sinusoidal", "x = x0, y = A*sin(2*pi*f*t)", "sin_amplitude/frequency"],
-        ["random_walk", "v = v*damp + a*dt, x += v*dt", "random_max_accel/damping/seed"],
-        ["waypoint", "朝航点飞行，到达后切换", "waypoints, arrival_radius"],
+        ["constant_velocity", "x += vx*dt, y += vy*dt, z += vz*dt", "velocity_x/y/z_mps"],
+        ["constant_accel", "v += a*dt, pos += v*dt", "velocity + accel_x/y/z_mps2"],
+        ["sinusoidal", "x=x0, y=A*sin(wt), z=Az*sin(wz*t)", "sin_amplitude/frequency + sin_z_amplitude/frequency"],
+        ["random_walk", "v = v*damp + a*dt, pos += v*dt", "random_max_accel/damping/seed"],
+        ["waypoint", "朝航点3D飞行，到达后切换", "waypoints(x,y,z,speed), arrival_radius"],
       ],
       [2200, 3800, CONTENT_W - 6000]
     ),
 
     heading3("3.1.3 派生属性"),
     ...codeLines([
-      "bearing_deg = atan2(y, x) 转角度    // 目标方位角",
-      "distance_m  = hypot(x, y)           // 目标距离",
+      "azimuth_deg   = atan2(y, x) 转角度         // 目标方位角",
+      "bearing_deg   = azimuth_deg                // 向后兼容别名",
+      "elevation_deg = atan2(z, hypot(x, y)) 转角度 // 目标俯仰角",
+      "distance_m    = sqrt(x² + y² + z²)         // 3D 目标距离",
     ]),
 
     heading3("3.1.4 配置参数"),
@@ -502,7 +504,7 @@ function chapter4() {
     bullet("1. 在 TargetConfig.motion_type 的 Literal[...] 中加模式名"),
     bullet("2. 在 MOTION_MODE_PARAMS 中加模式 -> 字段映射"),
     bullet("3. 在 TargetConfig 中加新参数字段"),
-    bullet("4. 在 TargetKinematics2D.step() 中加 elif 分支实现物理逻辑"),
+    bullet("4. 在 TargetKinematics3D.step() 中加 elif 分支实现物理逻辑"),
     p("Config Editor 自动读取 Literal 类型生成下拉选项，并根据 MOTION_MODE_PARAMS 过滤显示对应参数。"),
 
     heading2("4.4 派生属性"),

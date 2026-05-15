@@ -31,7 +31,7 @@ def parse_args() -> AppConfig:
         "--waypoints",
         type=str,
         default="",
-        help='航点轨迹，格式: "(x1,y1,speed1),(x2,y2,speed2)"（speed=0 表示悬停）',
+        help='航点轨迹，格式: "(x1,y1,z1,speed1),(x2,y2,z2,speed2)"；兼容旧格式 "(x1,y1,speed1)"（z 缺省为 0，speed=0 表示悬停）',
     )
     args = parser.parse_args()
     return AppConfig(

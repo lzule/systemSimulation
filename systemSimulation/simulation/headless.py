@@ -20,12 +20,19 @@ def apply_target_overrides(cfg: AppConfig) -> None:
             target_cfg.waypoints = _parse_waypoints(cfg.waypoints)
 
 
-def _parse_waypoints(waypoints_str: str) -> list[tuple[float, float, float]]:
-    """解析航点字符串，格式: "(x1,y1,s1),(x2,y2,s2)"。"""
+def _parse_waypoints(waypoints_str: str) -> list[tuple[float, ...]]:
+    """解析航点字符串，格式: "(x1,y1,z1,s1)" 或 "(x1,y1,s1)"（z 缺省为 0）。"""
     points = []
-    for match in re.finditer(r'\(\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*\)', waypoints_str):
-        x, y, s = float(match.group(1)), float(match.group(2)), float(match.group(3))
-        points.append((x, y, s))
+    for match in re.finditer(r'\(\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*(?:,\s*([\d.\-]+)\s*)?(?:,\s*([\d.\-]+)\s*)?\)', waypoints_str):
+        vals = [float(match.group(i)) for i in range(1, 5) if match.group(i) is not None]
+        if len(vals) == 3:
+            # 旧格式 (x, y, speed)
+            points.append((vals[0], vals[1], vals[2]))
+        elif len(vals) == 4:
+            # 新格式 (x, y, z, speed)
+            points.append((vals[0], vals[1], vals[2], vals[3]))
+        else:
+            raise ValueError(f"航点格式错误，需要 (x,y,speed) 或 (x,y,z,speed)，得到 {len(vals)} 个值: {match.group(0)}")
     if not points:
         raise ValueError(f"无法解析航点字符串: {waypoints_str}")
     return points

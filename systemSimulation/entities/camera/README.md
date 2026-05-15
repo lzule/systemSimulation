@@ -11,8 +11,10 @@
 - 内部采用针孔相机模型 + 高斯光斑渲染
 - 支持变焦控制（一阶惯性执行器）
 
+> **阶段2升级**：相机投影模型已从单轴（仅 u 坐标有效，v 硬编码为 h/2）升级为双轴投影。v 坐标现在通过俯仰角 beta 真实计算：`v = cy - f_px * tan(beta)`。FOV 判断也升级为双轴（水平 fov_h_deg + 垂直 fov_v_deg），目标需同时在两个方向上处于视场内才判定为 in_fov。
+
 输出：
-- `CameraState`：状态字典（焦距、帧号、目标像素位置等）
+- `CameraState`：状态字典（焦距、帧号、目标像素位置 u_px/v_px 等）
 - `FramePacket`：渲染帧（灰度图 + 内参 + 可选 ground truth）
 
 ## 2. 文件结构
@@ -50,6 +52,7 @@ BOOTING/READY ──power_off()──> OFF (清空帧缓冲和变焦速率)
 | `focal_length_mm` | float | `12.0` | 初始焦距（毫米） |
 | `focal_min_mm` | float | `4.4` | 最短焦距 |
 | `focal_max_mm` | float | `200.0` | 最长焦距 |
+| `fov_v_deg` | float | `0.0` | 垂直视场角（度），0 表示自动从焦距和传感器尺寸计算（阶段2新增） |
 
 ### ZoomController 内部参数
 
@@ -73,12 +76,19 @@ BOOTING/READY ──power_off()──> OFF (清空帧缓冲和变焦速率)
 ```
 pixel_size_mm = sensor_w_mm / resolution_w
 f_px = f_mm / pixel_size_mm
-fov_half_rad = atan(sensor_w_mm / (2 * f_mm))
+fov_h_half_rad = atan(sensor_w_mm / (2 * f_mm))
+fov_v_half_rad = atan(sensor_h_mm / (2 * f_mm))
 ```
 
-目标成像条件：`|alpha_rad| <= fov_half_rad`（alpha = bearing - yaw）
+> **阶段2升级**：投影模型已从单轴升级为双轴。
 
-像素位置：`u = f_px * tan(alpha) + w/2`，`v = h/2`（目标在水平面上，v 固定在图像中心）
+目标成像条件（双轴）：
+- 水平：`|alpha_rad| <= fov_h_half_rad`（alpha = azimuth - yaw）
+- 垂直：`|beta_rad| <= fov_v_half_rad`（beta = elevation - pitch）
+
+像素位置（双轴）：
+- `u = f_px * tan(alpha) + cx`（水平方向，cx = w/2）
+- `v = cy - f_px * tan(beta)`（垂直方向，cy = h/2，beta>0 表示目标在上方）
 
 ### 5.2 高斯光斑渲染
 
@@ -113,13 +123,15 @@ f_current = (1 - alpha) * f_current + alpha * f_target   # 一阶惯性趋近目
 ## 6. 数据流
 
 ```
-target_state (x_m, y_m) ──┐
-                           ├──> CameraEntity.update(dt, ts, target_state, gimbal_state)
-gimbal_state (yaw_deg)  ──┘         │
+target_state (x_m, y_m, z_m) ──┐
+                                ├──> CameraEntity.update(dt, ts, target_state, gimbal_state)
+gimbal_state (yaw_deg, pitch_deg) ──┘         │
                                      ├─ _update_zoom(dt)          -- 变焦推进
-                                     ├─ bearing = atan2(y, x)
-                                     ├─ alpha = (bearing - yaw + π) % 2π - π
-                                     ├─ render_beacon_frame(alpha, f_mm)
+                                     ├─ azimuth = atan2(y, x)
+                                     ├─ elevation = atan2(z, hypot(x, y))
+                                     ├─ alpha = (azimuth - yaw + π) % 2π - π
+                                     ├─ beta = (elevation - pitch + π) % 2π - π
+                                     ├─ render_beacon_frame(alpha, beta, f_mm)
                                      │       │
                                      │   FramePacket(image, intrinsics, optional_gt)
                                      │       ├─ intrinsics: f_mm, f_px, cx, cy, width, height

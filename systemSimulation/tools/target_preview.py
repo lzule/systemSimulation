@@ -2,8 +2,8 @@
 tools/target_preview.py — 目标运动实时预览
 ==========================================
 【功能】
-    独立预览目标在 2D 世界坐标中的运动轨迹。
-    实时显示目标位置、速度向量、方位角随时间变化，
+    独立预览目标在 3D 世界坐标中的运动轨迹。
+    实时显示目标位置、速度向量、方位角/俯仰角随时间变化，
     结束后可保存 GIF。
 
 【运行方式】
@@ -12,11 +12,11 @@ tools/target_preview.py — 目标运动实时预览
 
 【界面布局】
     ┌────────────────────┬─────────────────────┐
-    │  2D 轨迹图          │  方位角时间曲线      │
-    │  · 实时位置点       │  （目标相对原点）    │
-    │  · 历史轨迹线       ├─────────────────────┤
-    │  · 原点（云台）     │  目标距离时间曲线    │
-    │  · 速度向量箭头     │                     │
+    │  2D 轨迹图(XY)     │  方位角时间曲线      │
+    │  · 实时位置点       ├─────────────────────┤
+    │  · 历史轨迹线       │  俯仰角时间曲线      │
+    │  · 原点（云台）     ├─────────────────────┤
+    │  · 速度向量箭头     │  3D距离时间曲线      │
     └────────────────────┴─────────────────────┘
 """
 
@@ -43,7 +43,7 @@ else:
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import target_cfg, scene_cfg, camera_cfg
-from entities.target.model import TargetKinematics2D
+from entities.target.model import TargetKinematics3D
 
 os.makedirs(os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), 'output'), exist_ok=True)
@@ -73,7 +73,7 @@ class TargetPreview:
     def __init__(self, save_gif: bool = False, no_display: bool = False):
         self.save_gif   = save_gif
         self.no_display = no_display
-        self.target     = TargetKinematics2D(target_cfg)
+        self.target     = TargetKinematics3D(target_cfg)
         self.scn        = scene_cfg
         self.cam        = camera_cfg
 
@@ -83,11 +83,12 @@ class TargetPreview:
         trail_len = int(self.scn.trail_length_s / self.scn.dt_s)
         win_len   = int(self.scn.plot_window_s / self.scn.dt_s)
 
-        self.buf_x       = deque(maxlen=trail_len)
-        self.buf_y       = deque(maxlen=trail_len)
-        self.buf_t       = deque(maxlen=win_len)
-        self.buf_bearing = deque(maxlen=win_len)
-        self.buf_dist    = deque(maxlen=win_len)
+        self.buf_x        = deque(maxlen=trail_len)
+        self.buf_y        = deque(maxlen=trail_len)
+        self.buf_t        = deque(maxlen=win_len)
+        self.buf_bearing  = deque(maxlen=win_len)
+        self.buf_elevation = deque(maxlen=win_len)
+        self.buf_dist     = deque(maxlen=win_len)
 
         self._t           = 0.0
         self._gif_frames  = []
@@ -104,14 +105,15 @@ class TargetPreview:
             fontsize=12, fontweight='bold')
 
         gs = gridspec.GridSpec(
-            2, 2, figure=self.fig,
-            hspace=0.42, wspace=0.32,
+            3, 2, figure=self.fig,
+            hspace=0.52, wspace=0.32,
             left=0.07, right=0.97,
             top=0.90, bottom=0.08
         )
-        self.ax_traj    = self.fig.add_subplot(gs[:, 0])   # 左：轨迹（占全高）
-        self.ax_bearing = self.fig.add_subplot(gs[0, 1])   # 右上：方位角
-        self.ax_dist    = self.fig.add_subplot(gs[1, 1])   # 右下：距离
+        self.ax_traj     = self.fig.add_subplot(gs[:, 0])   # 左：轨迹（占全高）
+        self.ax_bearing  = self.fig.add_subplot(gs[0, 1])   # 右上：方位角
+        self.ax_elevation = self.fig.add_subplot(gs[1, 1])  # 右中：俯仰角
+        self.ax_dist     = self.fig.add_subplot(gs[2, 1])   # 右下：距离
 
         # ── 轨迹图静态元素 ──
         ax = self.ax_traj
@@ -153,8 +155,8 @@ class TargetPreview:
         # ── 方位角曲线 ──
         ax = self.ax_bearing
         ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Bearing (deg)')
-        ax.set_title('Target Bearing from Camera')
+        ax.set_ylabel('Azimuth (deg)')
+        ax.set_title('Target Azimuth from Camera')
         ax.axhline(0, color='#888888', linewidth=0.8)
         ax.grid(True)
         self.bearing_line, = ax.plot([], [], color='#C62828', linewidth=1.8)
@@ -171,6 +173,26 @@ class TargetPreview:
                          color='#FFF3E0', alpha=0.5)
         ax.legend(fontsize=8, loc='upper right')
 
+        # ── 俯仰角曲线 ──
+        ax = self.ax_elevation
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Elevation (deg)')
+        ax.set_title('Target Elevation from Camera')
+        ax.axhline(0, color='#888888', linewidth=0.8)
+        ax.grid(True)
+        self.elevation_line, = ax.plot([], [], color='#6A1B9A', linewidth=1.8)
+        # 垂直 FOV 限制标注
+        fov_v_half = self.cam.fov_v_deg / 2
+        ax.axhline( fov_v_half, color='#E65100', linewidth=1.2,
+                    linestyle=':', alpha=0.7,
+                    label=f'FOV limit ±{fov_v_half:.1f}°')
+        ax.axhline(-fov_v_half, color='#E65100', linewidth=1.2,
+                    linestyle=':', alpha=0.7)
+        ax.fill_between([-1, self.scn.duration_s + 1],
+                         -fov_v_half, fov_v_half,
+                         color='#F3E5F5', alpha=0.5)
+        ax.legend(fontsize=8, loc='upper right')
+
         # ── 距离曲线 ──
         ax = self.ax_dist
         ax.set_xlabel('Time (s)')
@@ -179,10 +201,12 @@ class TargetPreview:
         ax.grid(True)
         self.dist_line, = ax.plot([], [], color='#1565C0', linewidth=1.8)
 
-    def _update(self, t: float, x: float, y: float,
-                vx: float, vy: float):
-        bearing = math.degrees(math.atan2(y, x))
-        dist    = math.hypot(x, y)
+    def _update(self, t: float, x: float, y: float, z: float,
+                vx: float, vy: float, vz: float):
+        azimuth   = math.degrees(math.atan2(y, x))
+        h_dist    = math.hypot(x, y)
+        elevation = math.degrees(math.atan2(z, h_dist))
+        dist      = math.sqrt(x*x + y*y + z*z)
 
         # 轨迹
         self.buf_x.append(x)
@@ -197,7 +221,7 @@ class TargetPreview:
                 self._vel_arrow.remove()
             except Exception:
                 pass
-        spd = math.hypot(vx, vy)
+        spd = math.sqrt(vx*vx + vy*vy + vz*vz)
         if spd > 0.1:
             scale = min(self.scn.world_view_range_m * 0.15, spd * 3)
             self._vel_arrow = self.ax_traj.annotate(
@@ -207,21 +231,24 @@ class TargetPreview:
                                 lw=2, mutation_scale=15))
 
         # 位置文字
-        in_fov = abs(bearing) <= self.cam.fov_h_deg / 2
-        fov_s  = 'IN FOV' if in_fov else 'OUT OF FOV'
+        in_fov_h = abs(azimuth) <= self.cam.fov_h_deg / 2
+        in_fov_v = abs(elevation) <= self.cam.fov_v_deg / 2
+        in_fov   = in_fov_h and in_fov_v
+        fov_s    = 'IN FOV' if in_fov else 'OUT OF FOV'
         self.pos_text.set_text(
             f"t = {t:.2f} s\n"
-            f"x = {x:.1f} m\n"
-            f"y = {y:.1f} m\n"
+            f"x = {x:.1f}  y = {y:.1f}  z = {z:.1f} m\n"
             f"dist   = {dist:.1f} m\n"
-            f"bearing= {bearing:.1f} deg\n"
+            f"azim   = {azimuth:.1f} deg\n"
+            f"elev   = {elevation:.1f} deg\n"
             f"speed  = {spd:.2f} m/s\n"
             f"FOV    : {fov_s}")
         self.pos_text.set_color('#2E7D32' if in_fov else '#C62828')
 
         # 曲线
         self.buf_t.append(t)
-        self.buf_bearing.append(bearing)
+        self.buf_bearing.append(azimuth)
+        self.buf_elevation.append(elevation)
         self.buf_dist.append(dist)
 
         t_arr = np.array(self.buf_t)
@@ -229,6 +256,11 @@ class TargetPreview:
         self.ax_bearing.set_xlim(t_arr[0], max(t_arr[-1], t_arr[0] + 0.5))
         self.ax_bearing.relim()
         self.ax_bearing.autoscale_view(scalex=False)
+
+        self.elevation_line.set_data(t_arr, np.array(self.buf_elevation))
+        self.ax_elevation.set_xlim(t_arr[0], max(t_arr[-1], t_arr[0] + 0.5))
+        self.ax_elevation.relim()
+        self.ax_elevation.autoscale_view(scalex=False)
 
         self.dist_line.set_data(t_arr, np.array(self.buf_dist))
         self.ax_dist.set_xlim(t_arr[0], max(t_arr[-1], t_arr[0] + 0.5))
@@ -263,24 +295,25 @@ class TargetPreview:
         print("=" * 55)
         print(f"  Motion type  : {target_cfg.motion_type}")
         print(f"  Initial pos  : ({target_cfg.initial_x_m}, "
-              f"{target_cfg.initial_y_m}) m")
+              f"{target_cfg.initial_y_m}, {target_cfg.initial_z_m}) m")
         print(f"  Duration     : {self.scn.duration_s} s")
         print(f"  GIF saving   : {'ON' if self.save_gif else 'OFF'}")
         print("-" * 55)
 
         n_steps       = int(self.scn.duration_s / self.scn.dt_s)
-        prev_x, prev_y = target_cfg.initial_x_m, target_cfg.initial_y_m
+        prev_x, prev_y, prev_z = target_cfg.initial_x_m, target_cfg.initial_y_m, target_cfg.initial_z_m
 
         for step_i in range(n_steps):
             self._t += self.scn.dt_s
-            x, y    = self.target.step(self.scn.dt_s)
+            x, y, z = self.target.step(self.scn.dt_s)
             vx = (x - prev_x) / self.scn.dt_s
             vy = (y - prev_y) / self.scn.dt_s
-            prev_x, prev_y = x, y
+            vz = (z - prev_z) / self.scn.dt_s
+            prev_x, prev_y, prev_z = x, y, z
 
             # 每隔 steps_per_frame 渲染一次
             if step_i % self.steps_per_frame == 0:
-                self._update(self._t, x, y, vx, vy)
+                self._update(self._t, x, y, z, vx, vy, vz)
                 self._frame_cnt += 1
 
                 if self.save_gif and \

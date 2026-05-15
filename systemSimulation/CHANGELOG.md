@@ -2,6 +2,214 @@
 
 ---
 
+## 037-20260515-220200 阶段3计划落地边界补严
+
+**目的**：对阶段 3 计划做进一步落地性检查，补上两处实施时容易踩坑的边界约束。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 明确 realistic 模式若要读取量化后的云台测量值，必须由 runtime 单独提供 measured state 或让 obs_filter 显式取用，不能把普通 `world_obs` 过滤一遍就“变出”量化测量值；同时给出推荐做法：由 runtime 额外传入 measured state，保持 obs_filter 只做观测整形
+2. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 收紧丢检帧定义：跳过 blob 渲染后输出的应是低于检测阈值的背景帧，而不是任意纯噪声帧，避免把“漏检模拟”误做成随机误检；同步补充测试和风险控制要求
+
+**验证**：静态复核计划文本与现有 runtime / gimbal / camera 结构，确认新增约束能消除实现歧义，且未改变阶段边界。
+
+---
+
+## 036-20260515-223000 阶段3计划二次优化
+
+**目的**：对 Codex 审阅后的阶段 3 计划进行二次审阅，补充实施细节。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 明确丢检实现为"跳过 blob 渲染输出纯噪声帧"，而非在检测层伪造结果
+2. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 新增 `get_measured_state()` 模式：编码器量化作用于独立输出路径，debug 模式保持连续值不变，realistic 模式读量化值再叠加噪声
+3. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 更新 realistic 模式字段描述，明确量化值来源
+
+**验证**：静态审阅，确认与 Codex 修订内容无冲突，且解决了 debug/research/realistic 三模式对 gimbal 状态的分层读取问题。
+
+---
+
+## 035-20260515-214500 阶段3计划评审修订
+
+**目的**：审阅阶段 3 详细开发计划，修正其中会误导后续实施的设计问题，保证计划可直接作为实施依据。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 修正丢检方案：不再在相机层伪造检测结果，改为把丢检落到图像不可检出这一层；同时修正原草案里“sigma 越小却按 sigma 正比增加概率”的方向错误
+2. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 调整配置归属：成像相关参数改归 `CameraConfig`，观测过滤相关参数改为独立配置块，避免混塞进 `SceneConfig`
+3. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 补齐 `obs_mode` 启动链路与兼容性要求，明确 CLI、headless、GUI、录制工具都需要同步打通
+4. `docs/阶段3-近真实建模/阶段3详细开发计划.md` — 修正轮 B 若干不稳妥点：区分缓存策略与容量、明确 `control_rate_hz` 默认语义、强调观测噪声与编码器量化不要重复叠加
+
+**验证**：静态复核阶段 1 冻结文档、当前代码结构和阶段 3 计划内容，确认修订后前后口径一致，且未越过“计划确认前不实施代码”的阶段边界。
+
+---
+
+## 034-20260515-211050 阶段2文档全面收口
+
+**目的**：更新 README.md 和 generate_doc.js 中残留的 2D/单轴描述，与阶段2实际代码一致。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `README.md` — 架构图更新为 3D 双轴描述（TargetState 含 z_m/azimuth_deg/elevation_deg，Gimbal 含 pitch_deg），数据流补充 beta/v 投影公式，闭环路径改为双轴，自定义模板改为双轴控制，维护约定中 TargetKinematics2D→TargetKinematics3D
+2. `docs/generate_doc.js` — TargetKinematics2D→TargetKinematics3D，step() 返回 (x,y,z)，运动模式公式增加 z 维度，派生属性增加 elevation_deg/bearing_deg 别名/3D distance
+
+**验证**：纯文档更新
+
+---
+
+## 033-20260515-204839 阶段2航点帮助文案收口
+
+**目的**：修复阶段 2 完成后仍残留的旧航点帮助文案，避免用户继续按 2D/3 元组提示输入参数。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `simulation/cli.py` — `--waypoints` 帮助文案更新为 4 元组主格式 `(x,y,z,speed)`，同时明确仍兼容旧 3 元组格式 `(x,y,speed)`
+2. `tools/record_session.py` — `--waypoints` 帮助文案同步更新，和 headless 解析逻辑保持一致
+
+**验证**：静态核对帮助文案与 `simulation/headless.py` 当前解析规则一致；后续通过 `--help` 命令确认用户可见提示已更新。
+
+---
+
+## 032-20260515-203744 阶段2 Codex二次审阅收尾
+
+**目的**：修复 Codex 二次审阅发现的 3 处问题。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `tools/target_preview.py` — 升级为 3D 双轴预览：新增俯仰角曲线、3D 距离、双轴 FOV 判断、z/vz 显示
+2. `simulation/types.py` + `tools/record_session.py` — 航点提示文案从 `(x,y,speed)` 更新为 `(x,y,z,speed)`
+3. `entities/raspi/tests/test_tracker_program.py` — 新增 6 个纵向控制测试（pitch_rate 正负号、deadband、限幅、丢目标 hold、yaw/pitch 独立性）
+
+**验证**：230 实体测试 + 冒烟测试通过
+
+---
+
+## 031-20260515-195735 阶段2 Codex审阅收尾修正
+
+**目的**：修复 Codex 审阅发现的3处问题。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `entities/target/entity.py` — 初始 TargetState 的 bearing_deg 和速度字段现在从 model 读取，不再使用默认值 0.0
+2. `tests/test_e2e_2axis.py` — 增加 setUpClass/tearDownClass 保存并恢复全局 target_cfg，消除测试顺序依赖
+3. `simulation/headless.py` — 2 元组航点格式不再静默接受，改为明确报错
+
+**验证**：64 target 测试 + 6 e2e 2axis 测试 + 冒烟测试全部通过
+
+---
+
+## 030-20260515-192726 阶段2双轴ATP升级实施
+
+**目的**：将系统从 2D 单轴原型升级为 3D 双轴 ATP 几何与控制底座。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `entities/target/model.py` — TargetKinematics2D→TargetKinematics3D，新增 z/vz 状态、elevation_deg 属性、3D distance、bearing_deg 别名
+2. `entities/target/entity.py` — TargetState 增加 z_m/azimuth_deg/elevation_deg/vz_mps 字段
+3. `entities/target/__init__.py` — 导出 TargetKinematics3D，保留 TargetKinematics2D 别名
+4. `entities/camera/model.py` — render_beacon_frame 签名扩展（alpha+beta），v=cy-f_px*tan(beta)，双轴 FOV 判断
+5. `entities/camera/entity.py` — beta 角计算，真实 v_px 投影
+6. `entities/raspi/tracker_program.py` — 双轴控制输出，pitch_rate 由像素误差驱动
+7. `config.py` — TargetConfig 增加 z 参数，CameraConfig 增加 fov_v_deg，TrackerTuningConfig 增加 pitch 参数
+8. `simulation/headless.py` — 航点解析支持 (x,y,z,speed) 格式
+9. `runtime/types.py` — WorldSnapshot.target 字段注释更新
+10. `entities/raspi/control_program.py` — Protocol 文档更新
+11. `tools/target_preview.py` — 导入更新
+12. `tools/replay_session.py` — CSV 字段扩展
+13. 新增 `docs/阶段2-双轴ATP升级/坐标系定义.md`
+14. 新增 `tests/test_2axis_geometry.py`（25个双轴几何测试）
+15. 新增 `tests/test_e2e_2axis.py`（6个双轴闭环测试）
+
+**验证**：224 单元测试 + 16 集成测试 + 25 双轴几何测试 + 6 双轴闭环测试全部通过，冒烟测试闭环正常
+
+---
+
+## 029-20260515-200000 阶段2工具文件适配修复
+
+**目的**：修复阶段2核心代码改动（TargetKinematics3D重命名、target新增z_m/azimuth_deg/elevation_deg/vz_mps字段、camera真实v_px、TrackerTuning新增pitch字段）后受影响的工具文件和测试。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `entities/raspi/control_program.py` — Protocol文档字符串补充 target 新字段（z_m, azimuth_deg, elevation_deg, vz_mps）
+2. `runtime/types.py` — WorldSnapshot target 注释补充 z_m, azimuth_deg, elevation_deg, vz_mps
+3. `tools/target_preview.py` — 导入从 TargetKinematics2D 更新为 TargetKinematics3D
+4. `tools/replay_session.py` — CSV回放时补充读取 target 新字段（z_m, azimuth_deg, elevation_deg, vz_mps）
+5. `entities/raspi/tests/test_tracker_program.py` — _Frame 模拟类补充 cy 参数，修复 pitch 轴跟踪代码读取 intrinsics["cy"] 的 KeyError
+
+**验证**：
+- 冒烟测试通过：`python app.py --no-gui --mode offline --duration 1.0`
+- 224 单元测试全部通过
+- 16 集成测试全部通过
+
+---
+
+## 028-20260515-183223 阶段2计划Codex二次修订同步修正
+
+**目的**：同步修正 Codex 027 修订后的残留不一致。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `docs/阶段2-双轴ATP升级/阶段2详细开发计划.md` §5.1 文件总览表中 camera/model.py 说明从旧公式 `v = f_px*tan(beta)+cy` 修正为 `v = cy - f_px*tan(beta)`，与任务3和任务5中的公式一致
+2. 补充二次修订记录
+
+**验证**：纯文档修订，公式符号与任务3:110、任务5:170 保持一致
+
+---
+
+## 027-20260515-182416 阶段2计划方向口径统一修订
+
+**目的**：修复阶段 2 计划文档里“上下投影公式”和“前后方向命名”两处仍会引发误解的口径冲突，避免后续实施时把俯仰方向或主方向测试写反。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **systemSimulation/docs/阶段2-双轴ATP升级/阶段2详细开发计划.md** —
+   - 将垂直投影公式统一为 `v = cy - f×tan(beta)`，使其与“beta>0 表示目标在上方、pitch 向上为正”的文字规则完全一致
+   - 补充“文档、公式、测试三处必须一致”的约束语句，减少后续实现歧义
+   - 将“正前方/正后方”等带主观含义的命名改为 `+x/-x/+y/-y` 与“上仰/下俯”方向命名
+   - 将坐标示例改为 4 个水平主方向数值示例，避免继续把“前向”与 azimuth 零位混用
+   - 同步更新几何测试和纵向专项测试中的方向描述与公式表述
+
+**验证**：已逐段静态复核阶段 2 计划文档，确认投影公式、图像坐标规则、pitch 正负关系、方向命名和验收条件前后一致；本次仅文档修订，未运行程序。
+
+---
+
+## 026-20260515-135650 阶段2计划Codex审阅修订
+
+**目的**：根据 Codex 审阅反馈修订阶段2详细开发计划，修正坐标角定义冲突、补全受影响文件范围、加硬验收命令。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. 修正 azimuth 公式：从 `atan2(x,y)` 改为 `atan2(y,x)`，与现有代码 `bearing_deg = atan2(y,x)` 一致
+2. 补全受影响文件范围：新增三档分类清单（必须改7个、大概率要改10个、只需核对7个）
+3. 补全纵向方向规则：图像 v 向下增、目标在上方时 pitch 应向上、补 3 个纵向专项测试
+4. 统一文件路径：所有任务中路径改为仓库真实路径（entities/、simulation/、tools/）
+5. 补 CameraConfig 垂直 FOV 说明：`fov_v_deg` 计算公式写入任务 3
+6. 统一方位测试：基础六类（前/后/左/右/上/下）+ 斜向补充类
+7. 加硬验收命令清单：新增 §8.3 必跑验收清单
+8. 补 2D 别名保留策略：`TargetKinematics2D` 别名保留至阶段4结束
+9. 补 CHANGELOG 收尾任务写入任务 6
+10. 修正实验输出影响说明：`v_px` 含义变化、旧脚本需复核
+
+**涉及文件**：
+- `docs/阶段2-双轴ATP升级/阶段2详细开发计划.md`（主要修订）
+
+**验证**：纯文档修订，无需代码验证
+
+---
+
 ## 025-20260515-131523 阶段2详细开发计划建档
 
 **目的**：根据阶段执行前置闸门规则，在阶段2实施前先产出详细开发计划文档。
