@@ -166,3 +166,24 @@ class GimbalEntity:
             "rate_tick": state.rate_tick,
             "last_command_apply_timestamp": state.last_command_apply_timestamp,
         }
+
+    def get_measured_state(self, timestamp: float) -> Dict[str, float]:
+        """返回编码器量化后的角度值（不修改内部连续状态）。
+
+        当 encoder_resolution_deg <= 0 时退化为无量化，直接返回连续值。
+        """
+        state = self.get_state(timestamp)
+        res = self.gimbal_cfg.encoder_resolution_deg
+        if res <= 0.0:
+            return {
+                "yaw_deg_internal": state["yaw_deg_internal"],
+                "pitch_deg": state["pitch_deg"],
+                "yaw_rate_dps": state["yaw_rate_dps"],
+                "pitch_rate_dps": state["pitch_rate_dps"],
+            }
+        return {
+            "yaw_deg_internal": round(state["yaw_deg_internal"] / res) * res,
+            "pitch_deg": round(state["pitch_deg"] / res) * res,
+            "yaw_rate_dps": state["yaw_rate_dps"],
+            "pitch_rate_dps": state["pitch_rate_dps"],
+        }

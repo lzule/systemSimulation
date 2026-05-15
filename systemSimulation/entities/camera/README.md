@@ -53,6 +53,12 @@ BOOTING/READY ──power_off()──> OFF (清空帧缓冲和变焦速率)
 | `focal_min_mm` | float | `4.4` | 最短焦距 |
 | `focal_max_mm` | float | `200.0` | 最长焦距 |
 | `fov_v_deg` | float | `0.0` | 垂直视场角（度），0 表示自动从焦距和传感器尺寸计算（阶段2新增） |
+| `sigma_ref_distance_m` | float | `0.0` | 距离相关 sigma 参考距离（阶段3新增，0=固定 sigma） |
+| `brightness_base` | float | `1.0` | 基准亮度（阶段3新增） |
+| `brightness_ref_distance_m` | float | `0.0` | 亮度衰减参考距离（阶段3新增，0=固定亮度） |
+| `brightness_jitter_std` | float | `0.0` | 亮度抖动标准差（阶段3新增，0=无抖动） |
+| `miss_detection_base_rate` | float | `0.0` | 丢检基础概率（阶段3新增，0=永不丢检） |
+| `miss_sigma_gain_px` | float | `0.0` | 丢检 sigma 增益（阶段3新增，0=永不丢检） |
 
 ### ZoomController 内部参数
 
@@ -95,11 +101,19 @@ fov_v_half_rad = atan(sensor_h_mm / (2 * f_mm))
 当目标在视场内时，渲染一个 2D 高斯光斑模拟点目标：
 
 ```python
-sigma = 3.2 像素
+sigma = sigma_base / (1 + distance_m / sigma_ref_distance_m)   # 距离相关
+brightness = brightness_base / (1 + distance_m / brightness_ref_distance_m) + jitter
 blob[y, x] = exp(-0.5 * ((x - u)/sigma)²) * exp(-0.5 * ((y - v)/sigma)²)
-frame = clip(blob * 255, 0, 255).astype(uint8)
+frame = clip(blob * brightness * 255, 0, 255).astype(uint8)
 frame += N(0, pixel_noise_std)   # 叠加高斯噪声
 ```
+
+> **阶段3升级**：光斑渲染已支持距离相关的三项近真实因素：
+> - **距离相关 sigma**：目标越远，sigma 越小（越暗淡越难检测）
+> - **亮度衰减**：目标越远，亮度越低；支持高斯抖动模拟大气闪烁
+> - **偶发丢检**：按概率跳过 blob 渲染，输出低于检测阈值的背景帧（模拟漏检）。sigma 越小丢检概率越高。丢检时 in_fov 和 u_px/v_px 仍正常计算。
+
+所有新参数默认值为零效果（sigma_ref_distance_m=0 → 固定 sigma，brightness_ref_distance_m=0 → 固定亮度，miss_detection_base_rate=0 → 永不丢检），完全向后兼容。
 
 ### 5.3 变焦控制器 ZoomController
 
@@ -135,7 +149,7 @@ gimbal_state (yaw_deg, pitch_deg) ──┘         │
                                      │       │
                                      │   FramePacket(image, intrinsics, optional_gt)
                                      │       ├─ intrinsics: f_mm, f_px, cx, cy, width, height
-                                     │       └─ optional_gt: u_px, v_px, in_fov (精确值)
+                                     │       └─ optional_gt: u_px, v_px, in_fov (精确值；仅 debug 模式对控制器可见)
                                      │
                                 CameraState ──> get_state() ──> dict
 ```

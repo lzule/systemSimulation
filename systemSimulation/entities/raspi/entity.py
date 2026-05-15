@@ -29,10 +29,15 @@ class RaspiEntity:
         self.power_state = POWER_OFF
         self.boot_remaining_s = 0.0
 
-        self.delay_model = RaspiDelayModel()
+        self.delay_model = RaspiDelayModel(
+            buffer_policy=self.delay_cfg.buffer_policy,
+            queue_capacity=self.delay_cfg.queue_capacity,
+        )
         self.control_program = NoopControlProgram()
 
         self.effective_obs_timestamp = float("nan")
+        self._control_rate_hz = 0.0
+        self._last_control_tick = float("-inf")
         self.last_process_latency_s = 0.0
         self.last_command_apply_timestamp = float("nan")
         self._last_state = RaspiState(
@@ -65,7 +70,24 @@ class RaspiEntity:
     def set_delay_profile(self, profile: Dict[str, float]) -> CommandResult:
         for k, v in profile.items():
             if hasattr(self.delay_cfg, k):
-                setattr(self.delay_cfg, k, float(v))
+                current = getattr(self.delay_cfg, k)
+                if isinstance(current, str):
+                    setattr(self.delay_cfg, k, str(v))
+                elif isinstance(current, int) and not isinstance(current, bool):
+                    if k == "queue_capacity":
+                        setattr(self.delay_cfg, k, max(1, int(v)))
+                    else:
+                        setattr(self.delay_cfg, k, int(v))
+                else:
+                    if k == "control_rate_hz":
+                        setattr(self.delay_cfg, k, max(0.0, float(v)))
+                    else:
+                        setattr(self.delay_cfg, k, float(v))
+        self.delay_model = RaspiDelayModel(
+            buffer_policy=self.delay_cfg.buffer_policy,
+            queue_capacity=self.delay_cfg.queue_capacity,
+        )
+        self._last_control_tick = float("-inf")
         return CommandResult(True, "OK", "delay profile updated")
 
     def get_delay_profile(self) -> Dict[str, float]:
@@ -75,6 +97,9 @@ class RaspiEntity:
             "state_read_delay_s": float(self.delay_cfg.state_read_delay_s),
             "command_tx_delay_s": float(self.delay_cfg.command_tx_delay_s),
             "jitter_std_s": float(self.delay_cfg.jitter_std_s),
+            "buffer_policy": self.delay_cfg.buffer_policy,
+            "queue_capacity": int(self.delay_cfg.queue_capacity),
+            "control_rate_hz": float(self.delay_cfg.control_rate_hz),
         }
 
     def _jitter(self) -> float:
@@ -97,7 +122,15 @@ class RaspiEntity:
 
         if self.power_state == POWER_READY:
             obs_delay = max(float(self.delay_cfg.image_read_delay_s), float(self.delay_cfg.state_read_delay_s)) + self._jitter()
-            self.delay_model.try_start(timestamp, world_obs, obs_delay)
+
+            # 多速率控制：只在控制 tick 时接受新观测
+            if self.delay_cfg.control_rate_hz > 0.0:
+                control_interval = 1.0 / self.delay_cfg.control_rate_hz
+                if timestamp - self._last_control_tick >= control_interval - 1e-9:
+                    self._last_control_tick = timestamp
+                    self.delay_model.try_start(timestamp, world_obs, obs_delay)
+            else:
+                self.delay_model.try_start(timestamp, world_obs, obs_delay)
 
             for obs_ts, cmds in self.delay_model.tick(
                 timestamp,
@@ -117,7 +150,7 @@ class RaspiEntity:
             timestamp=timestamp,
             power_state=self.power_state,
             effective_obs_timestamp=self.effective_obs_timestamp,
-            pipeline_backlog_len=1 if self.delay_model.is_busy() else 0,
+            pipeline_backlog_len=(1 if self.delay_model.is_busy() else 0) + self.delay_model.queue_len,
             last_process_latency_s=self.last_process_latency_s,
             last_command_apply_timestamp=self.last_command_apply_timestamp,
             delay_metrics={
@@ -126,6 +159,9 @@ class RaspiEntity:
                 "state_read_delay_s": float(self.delay_cfg.state_read_delay_s),
                 "command_tx_delay_s": float(self.delay_cfg.command_tx_delay_s),
                 "jitter_std_s": float(self.delay_cfg.jitter_std_s),
+                "buffer_policy": self.delay_cfg.buffer_policy,
+                "queue_capacity": int(self.delay_cfg.queue_capacity),
+                "control_rate_hz": float(self.delay_cfg.control_rate_hz),
             },
         )
         return self._last_state

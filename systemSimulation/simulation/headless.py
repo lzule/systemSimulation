@@ -49,7 +49,7 @@ def run_headless_session(cfg: AppConfig) -> None:
     """无 GUI 模式：用于自动化验证。"""
     apply_target_overrides(cfg)
     control_program = _resolve_control_program(cfg)
-    runtime = build_runtime(delay_ms=cfg.delay_ms, control_program=control_program)
+    runtime = build_runtime(delay_ms=cfg.delay_ms, control_program=control_program, obs_mode=cfg.obs_mode)
     n_steps = max(1, int(cfg.duration_s / runtime.dt_s))
     print(f"[app/headless] mode={cfg.mode}, duration={cfg.duration_s:.2f}s, dt={runtime.dt_s:.4f}, steps={n_steps}")
 

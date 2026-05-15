@@ -78,14 +78,23 @@ def start_stack(
     return runtime
 
 
-def build_runtime(delay_ms: float = 0.0, control_program: Any | None = None) -> DigitalTwinRuntime:
+def build_runtime(delay_ms: float = 0.0, control_program: Any | None = None, obs_mode: str = "debug") -> DigitalTwinRuntime:
     """创建并初始化 runtime：上电 -> 等待 READY -> 加载控制程序。
 
     Args:
         delay_ms: Raspi 链路延时（毫秒）。
         control_program: 控制程序实例、工厂函数、或 None。
+        obs_mode: 观测过滤模式（debug / research / realistic）。
     """
-    runtime = DigitalTwinRuntime()
+    from config import obs_cfg
+    from simulation.obs_filter import ObsFilter
+
+    obs_filter = ObsFilter(
+        mode=obs_mode,
+        encoder_noise_std_deg=obs_cfg.encoder_noise_std_deg,
+        gyro_noise_std_dps=obs_cfg.gyro_noise_std_dps,
+    )
+    runtime = DigitalTwinRuntime(obs_filter=obs_filter)
     return start_stack(runtime, delay_ms=delay_ms, control_program=control_program)
 
 

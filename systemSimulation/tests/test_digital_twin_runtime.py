@@ -9,6 +9,8 @@ if str(ROOT) not in sys.path:
 
 from runtime.digital_twin_runtime import DigitalTwinRuntime
 from runtime.types import Command
+from simulation.obs_filter import ObsFilter
+from config import GimbalConfig, gimbal_cfg
 
 
 class _RateProgram:
@@ -24,6 +26,15 @@ class _RateProgram:
                 source="raspi",
             ),
         ]
+
+
+class _RecordObsProgram:
+    def __init__(self):
+        self.last_obs = None
+
+    def on_tick(self, obs):
+        self.last_obs = obs
+        return []
 
 
 class TestDigitalTwinRuntime(unittest.TestCase):
@@ -82,7 +93,47 @@ class TestDigitalTwinRuntime(unittest.TestCase):
         self.assertAlmostEqual(snap_fast.gimbal["yaw_deg_internal"], snap_slow.gimbal["yaw_deg_internal"], places=6)
         self.assertEqual(snap_fast.camera["frame_id"], snap_slow.camera["frame_id"])
 
+    def test_realistic_obs_uses_quantized_measured_gimbal_state(self):
+        old_resolution = gimbal_cfg.encoder_resolution_deg
+        try:
+            gimbal_cfg.encoder_resolution_deg = 5.0
+            rt = DigitalTwinRuntime(
+                dt_s=0.01,
+                obs_filter=ObsFilter(mode="realistic", encoder_noise_std_deg=0.0, gyro_noise_std_dps=0.0),
+            )
+            rt.gimbal_client.power_on()
+            rt.camera_client.power_on()
+            rt.raspi_client.power_on()
+            rt.step(260)
+
+            rt.gimbal_client.set_mode("RATE_MODE")
+            rt.gimbal_client.set_rate_target(13.7, 0.0)
+            rt.step(7)
+
+            recorder = _RecordObsProgram()
+            rt.raspi.set_delay_profile(
+                {
+                    "image_read_delay_s": 0.0,
+                    "image_process_delay_s": 0.0,
+                    "state_read_delay_s": 0.0,
+                    "command_tx_delay_s": 0.0,
+                    "jitter_std_s": 0.0,
+                }
+            )
+            rt.raspi.load_control_program(recorder)
+            rt.step(2)
+
+            self.assertIsNotNone(recorder.last_obs, "realistic 模式下应已向控制程序传入观测")
+            raw = rt.get_world_snapshot().gimbal["yaw_deg_internal"]
+            measured = rt.gimbal.get_measured_state(rt.t)["yaw_deg_internal"]
+            obs_yaw = recorder.last_obs["gimbal"]["yaw_deg_internal"]
+
+            self.assertAlmostEqual(obs_yaw, measured, places=9)
+            self.assertNotAlmostEqual(raw, measured, places=9)
+            self.assertEqual(recorder.last_obs["gimbal"]["mode"], "RATE_MODE")
+        finally:
+            gimbal_cfg.encoder_resolution_deg = old_resolution
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -15,6 +15,15 @@ class CameraConfig:
     boot_delay_s: float = 0.5
     beacon_sigma_px: float = 3.2
     detection_threshold: int = 180
+    # 距离相关 sigma
+    sigma_ref_distance_m: float = 0.0        # 0 = 固定 sigma（向后兼容）
+    # 亮度变化
+    brightness_base: float = 1.0
+    brightness_ref_distance_m: float = 0.0   # 0 = 固定亮度（向后兼容）
+    brightness_jitter_std: float = 0.0        # 0 = 无抖动
+    # 丢检
+    miss_detection_base_rate: float = 0.0     # 0 = 永不丢检（向后兼容）
+    miss_sigma_gain_px: float = 0.0           # 0 = 永不丢检
 
     @property
     def pixel_size_mm(self) -> float:
@@ -49,6 +58,9 @@ class GimbalConfig:
     response_tau_s: float = 0.03
     initial_angle_deg: float = 0.0
     boot_delay_s: float = 1.5
+    encoder_resolution_deg: float = 0.0         # 0 = 无量化（向后兼容）
+    static_friction_threshold_dps: float = 0.0  # 0 = 无死区（向后兼容）
+    tau_deviation_ratio: float = 0.0            # 0 = 无偏差（向后兼容）
 
 
 @dataclass
@@ -94,6 +106,9 @@ class RaspiDelayConfig:
     state_read_delay_s: float = 0.003
     command_tx_delay_s: float = 0.003
     jitter_std_s: float = 0.001
+    buffer_policy: str = "latest"         # latest=当前单槽抓最新，fifo=有限队列
+    queue_capacity: int = 1               # 1 + latest = 当前行为；fifo 时表示缓冲容量
+    control_rate_hz: float = 0.0          # 0=每tick（向后兼容），>0=指定频率
 
 
 @dataclass
@@ -168,6 +183,13 @@ class SceneConfig:
     pixel_noise_std: float = 2.0
 
 
+@dataclass
+class ObsConfig:
+    obs_mode: str = "debug"                  # 默认调试模式（向后兼容）
+    encoder_noise_std_deg: float = 0.0       # 编码器噪声标准差（realistic 模式用）
+    gyro_noise_std_dps: float = 0.0          # 陀螺仪噪声标准差（realistic 模式用）
+
+
 camera_cfg = CameraConfig()
 gimbal_cfg = GimbalConfig()
 axis_limit_cfg = AxisLimitConfig()
@@ -179,3 +201,4 @@ raspi_delay_cfg = RaspiDelayConfig()
 tracker_tuning_cfg = TrackerTuningConfig()
 target_cfg = TargetConfig()
 scene_cfg = SceneConfig()
+obs_cfg = ObsConfig()

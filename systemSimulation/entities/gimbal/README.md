@@ -46,6 +46,9 @@ READY ──power_off()──> OFF (同时重置被控对象和控制器)
 |------|------|--------|------|
 | `response_tau_s` | float | `0.03` | 一阶惯性时间常数（秒），越小响应越快 |
 | `initial_angle_deg` | float | `0.0` | Yaw 初始内部角度（度） |
+| `encoder_resolution_deg` | float | `0.0` | 编码器量化分辨率（阶段3新增，0=无量化） |
+| `static_friction_threshold_dps` | float | `0.0` | 静摩擦死区阈值（阶段3新增，0=无死区） |
+| `tau_deviation_ratio` | float | `0.0` | 时间常数随机偏差比（阶段3新增，0=无偏差） |
 
 ### AxisLimitConfig
 
@@ -90,6 +93,11 @@ actual_rate = (1 - alpha) * current_rate + alpha * cmd_rate
 - Yaw 轴：`yaw_deg_internal += yaw_rate * dt`，无硬限位，可无限累加
 - Pitch 轴：碰到 `[-135°, +90°]` 限位时速度归零，角度钳位
 - 显示值 `yaw_deg_display = yaw_deg_internal % 360`（归一化到 [0, 360)）
+
+> **阶段3升级**：被控对象新增三项非理想行为：
+> - **静摩擦死区**：静止时低于阈值的速率命令被吸收（`static_friction_threshold_dps`）
+> - **参数偏差**：`tau_s` 在初始化时添加随机偏差（`tau_deviation_ratio`），偏差运行中不变
+> - **编码器量化**：通过 `get_measured_state()` 输出量化后的角度值，不影响 `get_state()` 的连续值
 
 ### 5.2 串级控制器 CascadedController2Axis
 

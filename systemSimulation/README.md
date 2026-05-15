@@ -78,10 +78,14 @@ conda run -n simulation python app.py --mode realtime --duration 30 --delay-ms 2
 conda run -n simulation python app.py --no-gui --control-program my_tracker:MyTracker --duration 5
 
 # 航点轨迹
-conda run -n simulation python app.py --no-gui --waypoints "(100,0,2),(80,30,1.5),(60,0,0)" --duration 20
+conda run -n simulation python app.py --no-gui --waypoints "(100,0,20,2),(80,30,10,1.5),(60,0,0,0)" --duration 20
 
 # 切换目标运动类型
 conda run -n simulation python app.py --no-gui --target-type constant_velocity --duration 5
+
+# 观测模式切换（阶段3新增）
+conda run -n simulation python app.py --no-gui --obs-mode research --duration 5     # 研究模式（无target真值）
+conda run -n simulation python app.py --no-gui --obs-mode realistic --duration 5    # 近真实模式（含传感器噪声）
 ```
 
 成功判据：出现 `t=... yaw=... u=... in_fov=...` 周期输出，无异常堆栈。
@@ -123,17 +127,19 @@ world_obs = {
     "camera": camera_state.__dict__,
     "frame": self.camera.get_frame(),   # FramePacket
 }
-raspi_state = self.raspi.update(self._time, world_obs, submit_cmd, dt)
+# obs_filter 按 obs_mode 过滤控制器可见字段（阶段3新增）
+raspi_obs = obs_filter.filter_obs(world_obs) if obs_filter else world_obs
+raspi_state = self.raspi.update(self._time, raspi_obs, submit_cmd, dt)
 ```
 
 Raspi 内部的延时管线决定观测何时被控制程序处理。
 
 ### 3.4 Raspi → Runtime → Gimbal/Camera：命令闭环
 
-Raspi 的控制程序 `on_tick(obs)` 返回 `list[Command]`，经过单槽忙/闲延时管线后通过回调注入 Runtime：
+Raspi 的控制程序 `on_tick(obs)` 返回 `list[Command]`，经过延时管线后通过回调注入 Runtime：
 
 ```
-Raspi.on_tick(obs) → cmds → 单槽延时管线(IDLE→READING→PROCESSING→SENDING) → submit_cmd → Runtime._pending_commands
+Raspi.on_tick(obs) → cmds → 延时管线(IDLE→READING→PROCESSING→SENDING) → submit_cmd → Runtime._pending_commands
 ```
 
 下一个 tick 的 `_apply_due_commands()` 将到期命令分派到对应实体。
@@ -215,7 +221,7 @@ conda run -n simulation python app.py --mode realtime --duration 60 --delay-ms 1
 conda run -n simulation python app.py --no-gui --mode offline --duration 120 --delay-ms 30
 
 # 航点轨迹 + 自定义控制程序
-conda run -n simulation python app.py --no-gui --waypoints "(100,0,5),(50,30,3),(80,-20,4)" \
+conda run -n simulation python app.py --no-gui --waypoints "(100,0,5,2),(50,30,8,3),(80,-20,4,1.5)" \
     --control-program my_tracker:MyTracker --duration 30
 
 # 随机运动 + 延时
@@ -233,7 +239,7 @@ class ControlProgram(Protocol):
     def on_tick(self, obs: dict) -> list[Command]: ...
 ```
 
-`obs` 包含 `timestamp, target, gimbal, camera, frame`。返回 `list[Command]` 控制设备。
+`obs` 包含 `timestamp, target, gimbal, camera, frame`，但具体可见字段受 `obs_mode` 影响：`debug` 全量、`research` 白名单、`realistic` 为受限测量值。返回 `list[Command]` 控制设备。
 
 ### 5.2 自定义模板
 
@@ -297,13 +303,18 @@ runtime = build_runtime(control_program=MyTracker())
 
 ### 6.1 延时链路
 
-Raspi 的单槽忙/闲延时管线模拟真实硬件延迟：
+Raspi 的延时管线模拟真实硬件延迟，目前支持两种缓冲策略：
+
+- `latest`：默认策略，保持原有单槽忙/闲行为，忙时不接受新帧，空闲时抓最新帧
+- `fifo`：有限队列策略，忙时缓存观测，队列满时丢弃最旧帧
+
+两种策略共用同一状态机：
 
 ```
 IDLE → READING → PROCESSING → SENDING → IDLE
 ```
 
-忙时不接受新帧，空闲时取最新帧，不积压。延时越大，控制程序看到的观测越陈旧，跟踪性能越差。
+延时越大，控制程序看到的观测越陈旧，跟踪性能越差；切换为 `fifo` 后，还可以显式观察有限队列带来的积压效应。
 
 ### 6.2 如何设置
 
@@ -353,7 +364,7 @@ conda run -n simulation python tools/camera_3d_viewer.py
 ```bash
 conda run -n simulation python -m tools.record_session --duration 10 --output output/data.csv
 conda run -n simulation python -m tools.record_session --duration 20 --output output/data.csv \
-    --control-program my_tracker:MyTracker --waypoints "(100,0,2),(50,30,1)"
+    --control-program my_tracker:MyTracker --waypoints "(100,0,20,2),(50,30,10,1)"
 ```
 
 运行仿真并导出每个 tick 的 WorldSnapshot 为 CSV（含 target/gimbal/camera/raspi 全部字段）。
@@ -423,7 +434,7 @@ conda run -n simulation python app.py --no-gui --mode offline --duration 1.0
 
 ### 9.5 通过标准
 
-- 所有测试通过（224 单元 + 16 集成，含 8 个 e2e 基线测试 = 240 total）
+- 所有测试通过（224 单元 + 16 集成 + 56 近真实/obs_filter/非理想/延时策略，含 8 个 e2e 基线测试）
 - 端到端闭环基线测试通过（跟踪率、角度误差、无发散）
 - 无 GUI 冒烟输出连续、无异常终止
 - 关键字段（yaw/pitch/u/v/in_fov/backlog）正常刷新

@@ -35,7 +35,8 @@ def _build_csv_row(snap) -> dict:
 
 def record_session(duration_s: float, output_path: str,
                    delay_ms: float = 0.0, control_program_path: str = "",
-                   target_type: str = "", waypoints: str = "") -> int:
+                   target_type: str = "", waypoints: str = "",
+                   obs_mode: str = "debug") -> int:
     """运行仿真并录制数据到 CSV。返回写入的行数。"""
     from simulation.bootstrap import build_runtime, load_control_program_from_path
     from simulation.headless import apply_target_overrides
@@ -45,6 +46,7 @@ def record_session(duration_s: float, output_path: str,
         duration_s=duration_s, mode="offline", delay_ms=delay_ms, no_gui=True,
         control_program_path=control_program_path,
         target_type=target_type, waypoints=waypoints,
+        obs_mode=obs_mode,
     )
     apply_target_overrides(cfg)
 
@@ -88,12 +90,19 @@ def main():
         default="",
         help='航点 "(x1,y1,z1,s1),(x2,y2,z2,s2)"；兼容旧格式 "(x1,y1,s1)"（z 缺省为 0）',
     )
+    parser.add_argument(
+        "--obs-mode",
+        choices=["debug", "research", "realistic"],
+        default="debug",
+        help="观测过滤模式: debug=透传全部 / research=白名单 / realistic=噪声+白名单",
+    )
     args = parser.parse_args()
 
     record_session(
         duration_s=args.duration, output_path=args.output,
         delay_ms=args.delay_ms, control_program_path=args.control_program,
         target_type=args.target_type, waypoints=args.waypoints,
+        obs_mode=args.obs_mode,
     )
 
 

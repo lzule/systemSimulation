@@ -35,7 +35,7 @@ class ControlProgram(Protocol):
                 "in_fov": bool,               # 目标是否在视场内
                 "u_px": float, "v_px": float, # 目标像素坐标（NaN=不在视场内）
             },
-            "frame": FramePacket | None,     # 渲染帧（image, intrinsics, optional_gt）
+            "frame": FramePacket | None,     # 渲染帧（image, intrinsics）；debug 模式下可带 optional_gt，research/realistic 会被剥离
         }
       详细字段见 runtime.types.WorldSnapshot。
 
@@ -57,4 +57,3 @@ class NoopControlProgram:
 
     def on_tick(self, obs: dict) -> list[Command]:
         return []
-

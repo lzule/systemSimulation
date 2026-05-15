@@ -87,7 +87,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         )
 
         cp = load_control_program_from_path(self.cfg.control_program_path) if self.cfg.control_program_path else None
-        self.runtime = build_runtime(self.cfg.delay_ms, control_program=cp)
+        self.runtime = build_runtime(self.cfg.delay_ms, control_program=cp, obs_mode=self.cfg.obs_mode)
         self.state_buf = UiStateBuffer()
         self.worker = SimWorker(self.runtime, self.state_buf, mode=self.cfg.mode, duration_s=self.cfg.duration_s, sim_hz=200.0)
         self.worker.error_signal.connect(self._on_worker_error)
@@ -463,7 +463,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.worker.wait(2000)
 
         cp = load_control_program_from_path(self.cfg.control_program_path) if self.cfg.control_program_path else None
-        self.runtime = build_runtime(float(self.delay_spin.value()), control_program=cp)
+        self.runtime = build_runtime(float(self.delay_spin.value()), control_program=cp, obs_mode=self.cfg.obs_mode)
         self.state_buf.clear()
         self.worker = SimWorker(self.runtime, self.state_buf, mode=self.cfg.mode, duration_s=self.cfg.duration_s, sim_hz=200.0)
         self.worker.error_signal.connect(self._on_worker_error)

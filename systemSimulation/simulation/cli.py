@@ -33,6 +33,12 @@ def parse_args() -> AppConfig:
         default="",
         help='航点轨迹，格式: "(x1,y1,z1,speed1),(x2,y2,z2,speed2)"；兼容旧格式 "(x1,y1,speed1)"（z 缺省为 0，speed=0 表示悬停）',
     )
+    parser.add_argument(
+        "--obs-mode",
+        choices=["debug", "research", "realistic"],
+        default="debug",
+        help="观测过滤模式: debug=透传全部 / research=白名单 / realistic=噪声+白名单",
+    )
     args = parser.parse_args()
     return AppConfig(
         duration_s=args.duration,
@@ -42,6 +48,7 @@ def parse_args() -> AppConfig:
         control_program_path=args.control_program,
         target_type=args.target_type,
         waypoints=args.waypoints,
+        obs_mode=args.obs_mode,
     )
 
 

@@ -104,8 +104,8 @@ class CameraEntity:
         self.f_current_mm = self.zoom_ctrl.update(self.f_current_mm, self.f_target_mm, self.zoom_rate_cmd_mmps, dt)
         self.f_current_mm = float(np.clip(self.f_current_mm, self.cfg.focal_min_mm, self.cfg.focal_max_mm))
 
-    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float) -> Tuple[np.ndarray, bool, float, float]:
-        return self.imaging.render_beacon_frame(alpha_rad, beta_rad, self.f_current_mm, timestamp)
+    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float]:
+        return self.imaging.render_beacon_frame(alpha_rad, beta_rad, self.f_current_mm, timestamp, distance_m)
 
     def update(self, dt: float, timestamp: float, target_state: Dict[str, float], gimbal_state: Dict[str, float]) -> CameraState:
         if self.power_state == POWER_BOOTING:
@@ -133,7 +133,10 @@ class CameraEntity:
             pitch = math.radians(gimbal_state["pitch_deg"])
             beta = elevation - pitch
 
-            frame, in_fov, u_px, v_px = self._render_frame(alpha, beta, timestamp)
+            # 目标距离（用于距离相关成像模型）
+            distance_m = math.sqrt(x * x + y * y + z * z)
+
+            frame, in_fov, u_px, v_px = self._render_frame(alpha, beta, timestamp, distance_m)
             intrinsics = {
                 "f_mm": self.f_current_mm,
                 "f_px": self._focal_px(),

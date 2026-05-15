@@ -7,7 +7,7 @@
 树莓派控制侧实体，模拟真实嵌入式硬件的完整控制链路：
 
 - 有电源状态机（OFF → BOOTING → READY）
-- **单槽延时状态机**：IDLE → READING → PROCESSING → SENDING → IDLE，模拟观测读取→图像处理→命令发送链路，各级可配延时和抖动。忙时不接受新帧，空闲时抓取最新帧，不排队旧帧
+- **可配置延时状态机**：统一状态机 IDLE → READING → PROCESSING → SENDING → IDLE，支持 `latest`（默认单槽抓最新）和 `fifo`（有限队列）两种缓冲策略
 - **可插拔控制程序**：通过 `ControlProgram` 协议实现控制逻辑与运行时解耦
 - **唯一通过回调提交命令的实体**：控制程序输出的命令通过 `submit_cmd` 回调注入 Runtime
 
@@ -15,12 +15,14 @@
 
 核心职责：接收全量 `world_obs`，经过延时处理后调用控制程序，将产出的命令注入 Runtime 命令总线。
 
+> **阶段3升级**：Runtime 在将 `world_obs` 传递给 Raspi 之前，先经过 `ObsFilter`（`simulation/obs_filter.py`）按观测模式过滤。三种模式：`debug`（透传全部字段）、`research`（白名单过滤，无 target 真值）、`realistic`（含传感器噪声和量化测量值，无 target）。通过 `--obs-mode` CLI 参数控制。
+
 ## 2. 文件结构
 
 ```
 entities/raspi/
-├─ entity.py            # RaspiEntity + RaspiState（含单槽延时状态机调度）
-├─ model.py             # RaspiDelayModel（单槽 IDLE→READING→PROCESSING→SENDING 状态机）
+├─ entity.py            # RaspiEntity + RaspiState（含延时状态机调度）
+├─ model.py             # RaspiDelayModel（latest/fifo 缓冲策略 + IDLE→READING→PROCESSING→SENDING）
 ├─ delay_pipeline.py    # [遗留] DelayPipeline 三级堆队列（当前未使用，活跃实现在 model.py）
 ├─ control_program.py   # ControlProgram 协议 + NoopControlProgram
 ├─ tracker_program.py   # BaselineTrackerProgram + TrackerTuning
@@ -56,6 +58,9 @@ BOOTING/READY ──power_off()──> OFF (同时重置 RaspiDelayModel)
 | `state_read_delay_s` | float | `0.003` | 状态读取延时（秒） |
 | `command_tx_delay_s` | float | `0.003` | 命令发送延时（秒） |
 | `jitter_std_s` | float | `0.001` | 各级延时的抖动标准差（秒） |
+| `buffer_policy` | str | `"latest"` | 缓冲策略：latest=单槽抓最新，fifo=有限队列（阶段3新增） |
+| `queue_capacity` | int | `1` | fifo 队列容量（阶段3新增，1+latest=当前行为） |
+| `control_rate_hz` | float | `0.0` | 控制采样率（阶段3新增，0=每tick，>0=指定频率） |
 
 ### TrackerTuning（基线跟踪参数）
 
@@ -77,7 +82,10 @@ BOOTING/READY ──power_off()──> OFF (同时重置 RaspiDelayModel)
 
 ### 5.1 延时模型 RaspiDelayModel
 
-`RaspiDelayModel`（`model.py`）是当前活跃的延时实现，采用**单槽忙/闲状态机**：
+`RaspiDelayModel`（`model.py`）是当前活跃的延时实现，采用统一状态机并支持两种缓冲策略：
+
+- `latest`：默认策略，保持单槽忙/闲行为
+- `fifo`：有限队列策略，忙时缓存观测，队列满时丢弃最旧帧
 
 ```
 IDLE ──try_start()──> READING ──delay到期──> PROCESSING ──delay到期──> SENDING ──delay到期──> IDLE
@@ -86,9 +94,9 @@ IDLE ──try_start()──> READING ──delay到期──> PROCESSING ──
 ```
 
 核心设计：
-- **单槽**：任意时刻最多处理一帧观测，不会积累积压
-- **忙时丢弃**：状态机处于 READING/PROCESSING/SENDING 时，新到达的帧被直接跳过
-- **空闲时抓最新**：状态机回到 IDLE 后，`try_start()` 抓取当前最新 `world_obs` 开始处理
+- **latest**：任意时刻最多处理一帧观测，忙时跳过新帧，空闲时抓取最新帧
+- **fifo**：忙时将观测放入有限队列，队列满时丢弃最旧帧，空闲后优先处理积压
+- **多速率控制**：`control_rate_hz > 0` 时限制新观测进入处理链路的频率
 - **jitter**：由 `abs(random.gauss(0, jitter_std_s))` 生成，确保非负
 
 状态说明：
@@ -128,8 +136,8 @@ RaspiEntity 在 READY 状态下每个 tick 的执行步骤：
 ```
 
 **关键特性**：
-- **单槽无积压**：状态机忙时新帧被丢弃，`pipeline_backlog_len` 最大为 1（忙时）或 0（空闲时）
-- **最新帧优先**：空闲时总是抓取当前最新的 `world_obs`，不会处理过时的排队帧
+- **latest 模式**：忙时新帧被丢弃，行为与阶段 2 单槽模型兼容
+- **fifo 模式**：`pipeline_backlog_len` 反映“当前处理中 + 队列积压”的总量
 - **观测陈旧度**：`last_process_latency_s` 反映从观测抓取到命令产出的实际耗时
 
 ### 5.3 ControlProgram 协议
@@ -147,7 +155,7 @@ class ControlProgram(Protocol):
 | `target` | dict | TargetState：`x_m, y_m, bearing_deg, distance_m` |
 | `gimbal` | dict | GimbalState：`yaw_deg_internal, pitch_deg, mode, power_state, ...` |
 | `camera` | dict | CameraState：`f_current_mm, frame_id, in_fov, u_px, v_px, ...` |
-| `frame` | FramePacket | 渲染帧：`image(ndarray), intrinsics(dict), optional_gt(dict)` |
+| `frame` | FramePacket | 渲染帧：`image(ndarray), intrinsics(dict)`；`optional_gt` 仅在 debug 模式下可见 |
 
 **输出**：`list[Command]`，可控制 gimbal 和 camera。
 
@@ -185,8 +193,8 @@ Runtime 组装 world_obs
         v
 RaspiEntity.update(ts, world_obs, submit_cmd, dt)
         │
-   RaspiDelayModel（单槽状态机）
-   ├─ IDLE: try_start() 抓取最新 world_obs → READING
+   RaspiDelayModel（latest/fifo 状态机）
+   ├─ IDLE: try_start() 抓取观测（latest 取当前帧，fifo 优先取队列）→ READING
    ├─ READING: 延时到期 → PROCESSING
    ├─ PROCESSING: control_program.on_tick(obs) → cmds → SENDING
    └─ SENDING: 延时到期 → 回到 IDLE

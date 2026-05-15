@@ -23,12 +23,13 @@ class _ScheduledCommand:
 
 
 class DigitalTwinRuntime:
-    def __init__(self, dt_s: Optional[float] = None):
+    def __init__(self, dt_s: Optional[float] = None, obs_filter=None):
         self.dt_s = float(dt_s if dt_s is not None else scene_cfg.dt_s)
         self._time = 0.0
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
+        self._obs_filter = obs_filter
 
         self.target = TargetEntity()
         self.gimbal = GimbalEntity()
@@ -117,7 +118,14 @@ class DigitalTwinRuntime:
                     "camera": camera_state.__dict__,
                     "frame": self.camera.get_frame(),
                 }
-                raspi_state = self.raspi.update(self._time, world_obs, self._submit_command_at, self.dt_s)
+                # 观测过滤：按 obs_mode 整形控制器可见字段
+                if self._obs_filter and getattr(self._obs_filter, "mode", "") == "realistic":
+                    gimbal_measured = self.gimbal.get_measured_state(self._time)
+                    gimbal_measured["mode"] = gimbal_state.mode
+                    raspi_obs = self._obs_filter.filter_obs(world_obs, gimbal_measured=gimbal_measured)
+                else:
+                    raspi_obs = self._obs_filter.filter_obs(world_obs) if self._obs_filter else world_obs
+                raspi_state = self.raspi.update(self._time, raspi_obs, self._submit_command_at, self.dt_s)
 
                 self._last_snapshot = WorldSnapshot(
                     timestamp=self._time,
