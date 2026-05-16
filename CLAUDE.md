@@ -70,7 +70,7 @@ conda run -n simulation python -m unittest entities.raspi.tests.test_raspi_entit
 conda run -n simulation python -m unittest tests.test_gimbal_2axis_core -v
 ```
 
-**通过标准**：240 个测试（224 单元 + 16 集成，含 8 个 e2e 基线测试）全部通过，无异常终止，关键字段（yaw/pitch/u/v/in_fov）正常刷新。
+**通过标准**：运行 `tests/` 下全量 unittest 并全部通过，无异常终止，关键字段（yaw/pitch/u/v/in_fov）正常刷新。
 
 ## 3. 系统架构
 
@@ -128,7 +128,7 @@ class ControlProgram(Protocol):
 - 添加新目标运动类型：在 `TargetConfig.motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics2D` 实现逻辑。Config Editor 自动读取。
 - 修改实体代码时，同步更新对应 `entities/<name>/README.md`。
 - **每次修改代码后，必须在 `systemSimulation/CHANGELOG.md` 中追加一条记录**，格式为 `序号-年月日-时分秒`，注明修改目的、修改内容和验证结果。无论改动大小（包括配置调整、参数调优），都必须追加。遗漏 CHANGELOG 是一个需要纠正的问题。**每条记录必须标明修改者身份**（如 `修改者：Claude Code`、`修改者：Codex`、`修改者：手工`），放在条目开头或验证之前，方便追溯是谁做的修改。
-- **CHANGELOG 时间戳必须使用真实时间**：写入 CHANGELOG 条目前，**必须先执行 `date +%Y%m%d-%H%M%S` 获取当前真实时间**，将返回值直接填入条目标题。**禁止编造或猜测时间**。如果无法获取时间，使用 `00000000-000000` 作为占位。序号从上一条目的序号递增 1。
+- **CHANGELOG 时间戳必须使用真实时间**：写入 CHANGELOG 条目前，**必须先执行当前 shell 可用的真实时间命令获取时间戳**。当前仓库默认环境为 PowerShell，统一使用 `Get-Date -Format yyyyMMdd-HHmmss`。将返回值直接填入条目标题。**禁止编造或猜测时间**。如果无法获取时间，使用 `00000000-000000` 作为占位。序号从上一条目的序号递增 1。
 - **ATP 开发进度追踪**：开发计划在 `docs/低空场景无线光通信ATP开发文档.md`。每个阶段有状态标记（🔴 未开始 / 🟡 进行中 / 🟢 已完成）和闸门 checkbox。完成某个阶段的所有闸门条件后，将 checkbox 勾选为 `[x]`，将阶段标题的状态改为 `🟢 已完成`，将总路线表的状态同步更新，并将"当前活跃阶段"指向下一个阶段。**每次开始工作时先读这份文档确认当前活跃阶段。**
 - **阶段执行前置闸门**：当准备进入某个开发阶段的实际执行时，**必须先单独产出该阶段的详细开发计划文档，再等待用户确认**。这份文档至少要写清：本阶段目标、任务拆分、涉及文件/模块、依赖关系、风险点、验收标准和计划验证项。**在用户明确确认这份阶段计划之前，禁止开始该阶段的代码修改、配置修改、测试补写、参数调整和结构重构。** 如果用户只要求“先看计划”或“先细化阶段任务”，则只能继续完善文档，不能直接进入实施。
 
@@ -148,3 +148,86 @@ conda run -n simulation python app.py --no-gui --mode offline --duration 1.0
 - 任务拆分应尽量**解耦、彼此独立**，避免 Agent 间存在隐式依赖导致冲突或死锁。
 - 每个 Agent 的任务应有明确的输入和预期输出，不依赖其他 Agent 的中间状态。
 - 多 Agent 并行修改时，避免操作同一文件；如有必要，需在任务描述中明确协调机制。
+
+## 5. 常用命令与授权约定
+
+本项目允许代理在以下边界内直接执行常规开发、验证和清理动作。这里的“允许”是项目约定层面的允许；若运行环境本身仍要求审批，以运行环境规则为准。
+
+### 5.1 Python 与测试命令约定
+
+1. 所有 Python 命令必须在 `systemSimulation/` 目录下执行。
+2. 所有 Python 命令必须统一使用：
+   `conda run -n simulation python ...`
+3. 不要直接调用系统 `python`。
+4. 允许执行以下类型命令：
+   - 运行主程序冒烟验证
+   - 运行 unittest
+   - 运行 `tools/` 下的测试、benchmark、汇总脚本
+   - 使用 `python -c` 做小规模导入检查、只读检查、快速验证
+5. 若命令仅用于验证、导入检查、结果汇总、冒烟测试，可直接执行，不必先询问用户。
+6. 若命令会修改项目文件、生成大量结果、覆盖已有输出，必须先确认是否会影响现有结果目录；如有风险，优先写入临时目录或新目录。
+
+### 5.2 工作目录约定
+
+1. 默认工作目录为：
+   `k:/ustc-lizl/Liuwj2Lizl/ALL-Auto/8-simulation/System-APT/systemSimulation`
+2. 允许代理在以下目录内执行只读与常规验证命令：
+   - `systemSimulation/`
+   - `systemSimulation/tests/`
+   - `systemSimulation/tools/`
+   - `systemSimulation/docs/`
+3. 若命令需要跨出上述目录，先确认是否确有必要。
+
+### 5.3 临时文件与清理约定
+
+1. 允许代理删除自己为验证而创建的临时文件。
+2. 允许删除的对象仅限以下模式：
+   - `_smoke_*.py`
+   - `_test_*.py`
+   - `tmp_*.py`
+   - `temp_*.py`
+   - 明确标记为临时用途的输出文件
+3. 删除动作必须满足：
+   - 路径位于 `systemSimulation/` 或其明确子目录内
+   - 文件名符合临时文件模式
+   - 不是用户正式源码、正式文档、正式测试
+4. 删除文件时优先使用 PowerShell 原生命令：
+   `Remove-Item -LiteralPath ...`
+5. 禁止使用宽泛删除：
+   - 禁止删除整个源码目录
+   - 禁止删除不带明确模式约束的批量文件
+   - 禁止对未知路径做递归删除
+
+### 5.4 编码与输出约定
+
+1. 运行 Python 命令时，如涉及中文输出，优先显式设置 UTF-8。
+2. PowerShell 下如需避免编码问题，优先使用环境变量方式或 Python 内部显式设置。
+3. 允许执行导入验证命令，例如：
+   - 检查模块能否导入
+   - 检查场景表、算法注册表、汇总函数是否可访问
+
+### 5.5 允许直接执行的常见操作
+
+1. 冒烟测试：
+   `conda run -n simulation python app.py --no-gui --mode offline --duration 1.0`
+2. 全量测试：
+   `conda run -n simulation python -m unittest discover -s tests -v`
+3. 单文件测试：
+   `conda run -n simulation python -m unittest tests.test_xxx -v`
+4. 工具脚本验证：
+   `conda run -n simulation python tools/xxx.py`
+5. 小型导入检查：
+   `conda run -n simulation python -c "..."`
+6. 删除临时脚本：
+   `Remove-Item -LiteralPath "..."`
+
+### 5.6 仍需谨慎或单独确认的动作
+
+以下动作即使在本项目内，也不要默认直接执行：
+
+1. 删除非临时文件
+2. 大范围递归删除
+3. 覆盖已有 benchmark 结果目录
+4. 改动环境本身
+5. 安装依赖、联网下载、修改 conda 环境
+6. 任何可能影响用户手工产物的批量清理

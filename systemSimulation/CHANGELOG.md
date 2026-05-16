@@ -2,6 +2,150 @@
 
 ---
 
+## 052-20260516-185115 树莓派控制程序开发手册补充
+
+**目的**：补一份专门面向“自定义树莓派控制程序”的开发手册，帮助后续直接照文档完成编写、接入和测试，不再只靠分散的 README 和源码入口自己拼。
+**修改者**：Codex
+
+**修改内容**：
+1. **docs/树莓派控制程序开发手册.md** — 新增专门手册，整理控制程序职责、输入输出、最小模板、文件放置方式、加载命令、阶段4自定义控制结构、测试路径和常见问题
+2. **docs/使用手册.md** — 在文档导航和“自定义控制程序”章节中补入新手册入口
+3. **docs/doc-structure.md** — 将新手册加入文档总导航、阅读建议和知识点归属
+
+**验证**：
+1. `conda run -n simulation python -m unittest discover -s entities/raspi/tests -p "test_*.py" -v` 通过
+2. `conda run -n simulation python -m unittest tests.test_digital_twin_runtime -v` 通过
+3. `conda run -n simulation python app.py --no-gui --mode offline --duration 1.0` 通过
+
+---
+
+## 051-20260516-182529 阶段4收尾优化：收紧算法模式校验并拆分总体汇总口径
+
+**目的**：复审阶段4完成结果时，继续消除“算法支持模式”和“总体汇总口径”两处残留歧义，避免后续误跑和误读。
+
+**执行者**：Codex
+
+**修改内容**：
+1. `tools/run_benchmark.py` —— 新增 `is_obs_mode_allowed()`；在 `run_experiment` 入口直接拒绝不兼容的算法/模式组合；在 `run_suite` 中补充“无有效实验组合”直接报错。
+2. `tools/summarize_results.py` —— `by_algorithm` 改为按“算法 + observation_mode”分别汇总，避免导出的结构化结果混合 `research` 与 `realistic`。
+3. `tests/test_phase4_algorithm_baselines.py` —— 补充算法模式兼容性测试，以及 `by_algorithm` 按模式拆分的测试。
+
+**验证结果**：
+1. 阶段4专项测试通过。
+2. 全量 `unittest` 通过。
+3. `angle_mode_realistic + research` 会被入口拒绝。
+4. 汇总结果会按模式分别输出总体统计。
+
+---
+
+## 050-20260516-180354 阶段4正式benchmark完成+闸门验证通过+阶段4标记已完成
+
+**目的**：完成75组research正式benchmark，验证闸门条件，标记阶段4完成。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. 运行75组正式benchmark（5算法×3场景×5种子×research模式），全部成功
+2. 运行 summarize_results 汇总工具，产出 summary.csv、summary_grouped.csv、summary.json 及排名表
+3. `docs/低空场景无线光通信ATP开发文档.md` — 阶段4状态改为 🟢 已完成，4个闸门 checkbox 全部勾选，活跃阶段指向阶段5
+
+**Benchmark结果摘要（research模式，跨场景RMS均值）**：
+| 排名 | 算法 | RMS均值(px) |
+|------|------|-------------|
+| 1 | atp_search_track_baseline | 20.31 |
+| 2 | baseline_rate_p | 20.33 |
+| 3 | rate_pi | 20.63 |
+| 4 | alpha_beta_tracker | 56.85 |
+| 5 | linear_kf_tracker | 142.47 |
+
+**验证结果**：
+1. 75组实验全部成功，无失败
+2. 汇总排名正确按 obs_mode 分组
+3. 闸门4项全部满足
+
+---
+
+## 049-20260516-134201 阶段4 Codex二轮评审修复（模式拦截+排名分组）
+
+**目的**：根据 Codex 二轮评审修复 angle_mode 模式拦截缺失和算法总体排名混合 obs_mode 问题。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `tools/run_benchmark.py` — 在 `run_suite` 循环中增加算法-模式兼容性校验，不允许的组合直接跳过并打印提示；修复 `total` 变量名改为 `valid_count`；确保输出目录存在
+2. `tools/summarize_results.py` — 算法总体排名改为按 obs_mode 分组输出，每个模式独立出一份排名表
+
+**验证结果**：
+1. `angle_mode_realistic + research` 被正确拦截（跳过），`angle_mode_realistic + realistic` 正常运行
+2. 149 个测试全部通过，无回归
+
+---
+
+## 048-20260516-124934 阶段4 Codex评审修复（6项问题全部修复+39个新测试）
+
+**目的**：根据 Codex 评审意见修复阶段4代码问题，提升数据可信度和测试覆盖。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `entities/raspi/atp_state_machine.py` — 修复光栅扫描 pitch_rate 始终为 0 的缺陷，引入 `_search_pitch_stepping` 状态，yaw 到达边界时输出 pitch_rate 脉冲完成分层步进
+2. `entities/raspi/atp_control_program.py` — 新增 `last_yaw_rate_cmd_dps`、`last_pitch_rate_cmd_dps`、`last_detection_found` 属性，在 `on_tick` 返回前记录最后发送的速率命令值
+3. `tools/run_benchmark.py` — 实现 `reacquire_time_s` 和 `reacquire_success_rate` 指标的真实计算（从 ATP 状态序列提取 LOST/REACQUIRE→ACQUIRE/TRACK 的耗时和成功率）；注册 `angle_mode_realistic` 算法（独立 ControlProgram 包装，仅 realistic/debug 可用）；新增 `ALGORITHM_OBS_MODES` 注册表
+4. `tools/summarize_results.py` — 汇总分组 key 增加 `observation_mode` 维度，排名表和分组 CSV 增加 obs_mode 列
+5. `tests/test_phase4_algorithm_baselines.py` — 新增 39 个专项测试覆盖 ATP 状态机转换、光栅扫描、控制程序属性、预测器、跟踪器、汇总工具分组
+
+**验证结果**：
+1. 全量 149 个测试通过（原有 110 + 新增 39），无回归
+2. 冒烟测试通过（`app.py --no-gui --mode offline --duration 1.0`）
+3. Benchmark 小规模验证：metrics.csv 中 yaw_rate_cmd/pitch_rate_cmd 正确记录非零值，ATP 指标基于真实状态计算
+
+---
+
+## 047-20260516-103702 阶段4算法基线建设实施（多Agent并行开发）
+
+**目的**：实施阶段4「算法基线建设」，完成ATP状态机、5个算法基线、Benchmark工具全链路。
+
+**修改者**：Claude Code
+
+**修改内容**：
+1. `config.py` — 新增 `ATPStateMachineConfig` dataclass（14个可配置参数）+ 模块级单例 `atp_sm_cfg`
+2. `entities/raspi/atp_state_machine.py` — 新增ATP状态机（6状态：SEARCH/ACQUIRE/TRACK_COARSE/TRACK_FINE/LOST/REACQUIRE，光栅扫描策略，超时重捕获）
+3. `entities/raspi/atp_control_program.py` — 新增 `AtpControlProgram`（持有状态机+可插拔tracker/predictor，实现ControlProgram协议）
+4. `entities/raspi/trackers/rate_p_tracker.py` — 新增 `RatePTracker`（速率P控制，支持prediction替代）
+5. `entities/raspi/trackers/rate_pi_tracker.py` — 新增 `RatePITracker`（速率PI控制，积分限幅）
+6. `entities/raspi/trackers/angle_mode_tracker.py` — 新增 `AngleModeTracker`（角度模式，仅realistic可用）
+7. `entities/raspi/predictors/alpha_beta.py` — 新增 `AlphaBetaFilter`（alpha-beta滤波器）
+8. `entities/raspi/predictors/linear_kf.py` — 新增 `LinearKF`（线性卡尔曼滤波器）
+9. `tools/run_benchmark.py` — 新增Benchmark运行工具（5算法×3场景×5种子，标准输出文件）
+10. `tools/summarize_results.py` — 新增结果汇总工具（排名表+CSV+JSON）
+11. `entities/raspi/__init__.py` — 更新导出
+
+**验证结果**：
+1. 全量测试通过：110个测试，无回归
+2. 冒烟测试通过：`app.py --no-gui --mode offline --duration 1.0` 闭环正常
+3. 5个算法全部可在Benchmark中独立运行并生成标准结果文件
+4. summarize_results 正确产出排名表
+
+---
+
+## 047-20260516-104047 规范整理 CLAUDE 与 AGENTS 文档
+
+**目的**：消除 `CLAUDE.md` 与 `AGENTS.md` 的重复和冲突，使一份作为主规则文档，另一份作为精简补充文档，降低后续维护成本。
+
+**修改者**：Codex
+
+**修改内容**：
+1. `CLAUDE.md` — 将全量测试通过标准改为“运行 tests/ 下全量 unittest 并全部通过”，移除易过时的固定测试数量
+2. `CLAUDE.md` — 将 CHANGELOG 时间戳获取方式从 bash 风格 `date +%Y%m%d-%H%M%S` 调整为当前环境可执行的 PowerShell 命令 `Get-Date -Format yyyyMMdd-HHmmss`
+3. `AGENTS.md` — 重写为精简补充版，明确 `CLAUDE.md` 为主规则文档，只保留所有 Agent 通用的补充规则、当前环境下的时间戳规则和命令执行口径
+
+**验证结果**：
+1. 静态核对两份文档，确认不再存在整份重复复制
+2. 静态核对两份文档，确认 CHANGELOG 时间戳规则与当前 PowerShell 环境一致
+3. 静态核对两份文档，确认主次关系和维护边界已明确
+
+---
+
 ## 046-20260516-033500 阶段4计划 v5 口径补齐
 
 **目的**：补齐阶段 4 计划文档中两处会直接影响实现落地的一致性问题，避免实现阶段再次因口径不清出现分叉。
