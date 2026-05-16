@@ -989,6 +989,82 @@ class BenchmarkRunner:
 # 命令行入口
 # ============================================================
 
+def _generate_experiment_log(args, results: list[dict], output_dir: str) -> None:
+    """根据 benchmark 运行结果自动生成实验记录骨架。"""
+    successful = [r for r in results if not r.get("failure_reason")]
+    failed = [r for r in results if r.get("failure_reason")]
+
+    algorithms = args.algorithms or list(ALGORITHM_REGISTRY.keys())
+    scenarios = args.scenarios or list(SCENARIOS.keys())
+    seeds = args.seeds or [42, 123, 456, 789, 1024]
+    obs_modes = args.obs_modes or ["research"]
+
+    now = datetime.now(timezone.utc)
+
+    lines = [
+        "# 实验批次记录",
+        "",
+        f"- **实验时间**: {now.strftime('%Y-%m-%d %H:%M UTC')}",
+        f"- **实验说明**: {args.experiment_note}",
+        f"- **运行命令**: `python tools/run_benchmark.py --algorithms {' '.join(algorithms)} --scenarios {' '.join(scenarios)} --seeds {' '.join(str(s) for s in seeds)} --obs-modes {' '.join(obs_modes)} --duration {args.duration}`",
+        f"- **输出目录**: `{output_dir}`",
+        f"- **算法列表**: {', '.join(algorithms)}",
+        f"- **场景列表**: {', '.join(scenarios)}",
+        f"- **随机种子**: {', '.join(str(s) for s in seeds)}",
+        f"- **观测模式**: {', '.join(obs_modes)}",
+        f"- **仿真时长**: {args.duration}s",
+        f"- **总实验数**: {len(results)}（成功 {len(successful)}，失败 {len(failed)}）",
+        "",
+        "## 本轮改动内容",
+        "",
+        "<!-- 请在此填写本轮算法改动说明 -->",
+        "",
+        "## 关键结果摘要",
+        "",
+    ]
+
+    # 自动填入每个算法的 RMS 排名
+    if successful:
+        from tools.summarize_results import compute_summary
+        summary = compute_summary(successful)
+        groups = summary.get("groups", [])
+        # 按 RMS 均值排序
+        ranked = []
+        for g in groups:
+            rms = g.get("stats", {}).get("rms_pixel_error", {})
+            mean_rms = rms.get("mean")
+            if mean_rms is not None:
+                ranked.append((g["algorithm_name"], g["condition_id"], mean_rms, rms.get("std", 0.0)))
+        ranked.sort(key=lambda x: x[2])
+
+        lines.append("| 排名 | 算法 | 场景 | RMS误差(px) | Std |")
+        lines.append("|------|------|------|-------------|-----|")
+        for i, (alg, cond, rms, std) in enumerate(ranked, 1):
+            lines.append(f"| {i} | {alg} | {cond} | {rms:.2f} | {std:.2f} |")
+        lines.append("")
+
+    lines.extend([
+        "## 与基线对比结论",
+        "",
+        "<!-- 请在此填写对比结论，或使用 compare_results.py 自动生成 -->",
+        "",
+        "## 风险与异常",
+        "",
+        "<!-- 如有异常现象，请在此记录 -->",
+        "",
+        "## 下一步动作",
+        "",
+        "<!-- 请在此填写后续计划 -->",
+        "",
+    ])
+
+    log_path = os.path.join(output_dir, "experiment_log.md")
+    os.makedirs(output_dir, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    print(f"[实验记录] 已生成: {log_path}")
+
+
 def main() -> None:
     """命令行入口。"""
     # 修复 Windows 控制台编码
@@ -1032,17 +1108,25 @@ def main() -> None:
         "--output-dir", default="output/experiments",
         help="输出根目录（默认: output/experiments）",
     )
+    parser.add_argument(
+        "--experiment-note", default=None,
+        help="实验说明（自动写入实验记录骨架）",
+    )
 
     args = parser.parse_args()
 
     runner = BenchmarkRunner(output_dir=args.output_dir)
-    runner.run_suite(
+    results = runner.run_suite(
         algorithms=args.algorithms,
         scenarios=args.scenarios,
         seeds=args.seeds,
         obs_modes=args.obs_modes,
         duration_s=args.duration,
     )
+
+    # 自动生成实验记录骨架
+    if args.experiment_note is not None:
+        _generate_experiment_log(args, results, runner.output_dir)
 
 
 if __name__ == "__main__":
