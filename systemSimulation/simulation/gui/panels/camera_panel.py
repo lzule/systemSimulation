@@ -32,10 +32,22 @@ class CameraImageView(QtWidgets.QGraphicsView):
         self.center_h.setPen(pen_center)
         self.scene().addItem(self.center_h)
 
-        self.target_item = QtWidgets.QGraphicsEllipseItem(-3.0, -3.0, 6.0, 6.0)
-        self.target_item.setPen(QtGui.QPen(QtGui.QColor(COLOR["target"]), 1.2))
-        self.target_item.setBrush(QtGui.QBrush(QtGui.QColor(COLOR["target"])))
-        self.scene().addItem(self.target_item)
+        # 检测中心十字标记（替代原实心红点，不遮挡底层光斑）
+        cross_pen = QtGui.QPen(QtGui.QColor(COLOR["target"]), 1.0)
+        self.target_cross_h = QtWidgets.QGraphicsLineItem(-4.0, 0.0, 4.0, 0.0)
+        self.target_cross_h.setPen(cross_pen)
+        self.scene().addItem(self.target_cross_h)
+        self.target_cross_v = QtWidgets.QGraphicsLineItem(0.0, -4.0, 0.0, 4.0)
+        self.target_cross_v.setPen(cross_pen)
+        self.scene().addItem(self.target_cross_v)
+
+        # 光斑轮廓圈（sigma 同步，半径 = 3*sigma）
+        self.target_outline_item = QtWidgets.QGraphicsEllipseItem(-9.0, -9.0, 18.0, 18.0)
+        outline_color = QtGui.QColor(COLOR["target"])
+        outline_color.setAlpha(140)
+        self.target_outline_item.setPen(QtGui.QPen(outline_color, 1.0, QtCore.Qt.DashLine))
+        self.target_outline_item.setBrush(QtGui.QBrush(QtCore.Qt.NoBrush))
+        self.scene().addItem(self.target_outline_item)
 
     @staticmethod
     def _to_pixmap(gray_image: np.ndarray) -> QtGui.QPixmap:
@@ -59,10 +71,20 @@ class CameraImageView(QtWidgets.QGraphicsView):
 
         det = frame_sample.detection
         if det.found and det.cx is not None and det.cy is not None:
-            self.target_item.setVisible(True)
-            self.target_item.setPos(float(det.cx), float(det.cy))
+            cx_f, cy_f = float(det.cx), float(det.cy)
+            self.target_cross_h.setLine(cx_f - 4.0, cy_f, cx_f + 4.0, cy_f)
+            self.target_cross_v.setLine(cx_f, cy_f - 4.0, cx_f, cy_f + 4.0)
+            self.target_cross_h.setVisible(True)
+            self.target_cross_v.setVisible(True)
+            sigma_px = float(frame_sample.intrinsics.get("sigma_px", 3.0))
+            r = max(2.0, 3.0 * sigma_px)
+            self.target_outline_item.setRect(-r, -r, 2 * r, 2 * r)
+            self.target_outline_item.setVisible(True)
+            self.target_outline_item.setPos(cx_f, cy_f)
         else:
-            self.target_item.setVisible(False)
+            self.target_cross_h.setVisible(False)
+            self.target_cross_v.setVisible(False)
+            self.target_outline_item.setVisible(False)
 
         self.fitInView(self.sceneRect(), QtCore.Qt.KeepAspectRatio)
 

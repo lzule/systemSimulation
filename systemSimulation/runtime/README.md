@@ -139,14 +139,18 @@ self.raspi_client = RaspiClient(
 
 ### 6.3 apply_delay_profile 的延时拆分
 
+delay_ms 作为端到端总延迟预算，按真实硬件比例分配：
+
 ```python
-delay_s = delay_ms / 1000
-image_read_delay_s = delay_s
-image_process_delay_s = delay_s
-state_read_delay_s = delay_s * 0.5    # 状态读取减半
-command_tx_delay_s = delay_s
+total_s = delay_ms / 1000
+image_read_delay_s = total_s * 0.25   # 观测读取（与 state_read 并行）
+image_process_delay_s = total_s * 0.50  # 图像处理（最长阶段）
+state_read_delay_s = total_s * 0.25   # 状态读取（与 image_read 并行）
+command_tx_delay_s = total_s * 0.25   # 命令发送
 jitter_std_s = 0.0
 ```
+
+obs 阶段取 max(image_read, state_read)，实际总延迟 ≈ delay_ms。
 
 ## 7. WorldSnapshot 结构
 

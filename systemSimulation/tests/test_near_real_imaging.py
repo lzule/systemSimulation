@@ -93,7 +93,7 @@ class TestDistanceDependentSigma(unittest.TestCase):
 
         # sigma(10m) = 3.2 / (1 + 10/100) = 3.2 / 1.1 ≈ 2.91
         # 接近 sigma_base=3.2，亮斑应该比较宽
-        frame_near, in_fov, u, v = _render(model, distance_m=10.0, seed=42)
+        frame_near, in_fov, u, v, *_ = _render(model, distance_m=10.0, seed=42)
 
         self.assertTrue(in_fov)
         # 高亮像素数量应该接近固定 sigma 时的值
@@ -102,7 +102,7 @@ class TestDistanceDependentSigma(unittest.TestCase):
         # 参考帧：固定 sigma（sigma_ref_distance_m=0 → 使用 sigma_base）
         cfg_ref = _make_cfg(sigma_ref_distance_m=0.0)
         model_ref = CameraImagingModel(cfg_ref)
-        frame_ref, _, _, _ = _render(model_ref, distance_m=0.0, seed=42)
+        frame_ref, _, _, _, *_ = _render(model_ref, distance_m=0.0, seed=42)
         bright_ref = _count_bright_pixels(frame_ref, threshold=50)
 
         # 近距离时 sigma 衰减很小，亮斑宽度应接近固定 sigma 参考
@@ -116,13 +116,13 @@ class TestDistanceDependentSigma(unittest.TestCase):
         model = CameraImagingModel(cfg)
 
         # sigma(500m) = 3.2 / (1 + 500/100) = 3.2 / 6.0 ≈ 0.533
-        frame_far, in_fov, u, v = _render(model, distance_m=500.0, seed=42)
+        frame_far, in_fov, u, v, *_ = _render(model, distance_m=500.0, seed=42)
 
         self.assertTrue(in_fov)
         bright_far = _count_bright_pixels(frame_far, threshold=50)
 
         # 近距离参考
-        frame_near, _, _, _ = _render(model, distance_m=10.0, seed=42)
+        frame_near, _, _, _, *_ = _render(model, distance_m=10.0, seed=42)
         bright_near = _count_bright_pixels(frame_near, threshold=50)
 
         # 远距离 sigma 更小 → 亮斑更窄 → 高亮像素显著更少
@@ -135,9 +135,9 @@ class TestDistanceDependentSigma(unittest.TestCase):
         model = CameraImagingModel(cfg)
 
         # distance_m > 0 但 sigma_ref_distance_m=0 → 仍使用 sigma_base
-        frame_d0, _, _, _ = _render(model, distance_m=0.0, seed=42)
-        frame_d100, _, _, _ = _render(model, distance_m=100.0, seed=42)
-        frame_d500, _, _, _ = _render(model, distance_m=500.0, seed=42)
+        frame_d0, _, _, _, *_ = _render(model, distance_m=0.0, seed=42)
+        frame_d100, _, _, _, *_ = _render(model, distance_m=100.0, seed=42)
+        frame_d500, _, _, _, *_ = _render(model, distance_m=500.0, seed=42)
 
         # 三个距离下 sigma 相同（都是 beacon_sigma_px），但由于模型内部
         # brightness 等参数均为默认值（brightness_ref_distance_m=0），
@@ -180,7 +180,7 @@ class TestBrightnessVariation(unittest.TestCase):
         model = CameraImagingModel(cfg)
 
         # brightness(10m) = 1.0 / (1 + 10/100) = 1.0 / 1.1 ≈ 0.909
-        frame_near, in_fov, u, v = _render(model, distance_m=10.0, seed=42)
+        frame_near, in_fov, u, v, *_ = _render(model, distance_m=10.0, seed=42)
 
         self.assertTrue(in_fov)
         max_px = self._max_pixel(frame_near)
@@ -202,13 +202,13 @@ class TestBrightnessVariation(unittest.TestCase):
         model = CameraImagingModel(cfg)
 
         # brightness(500m) = 1.0 / (1 + 500/100) = 1/6 ≈ 0.167
-        frame_far, in_fov, u, v = _render(model, distance_m=500.0, seed=42)
+        frame_far, in_fov, u, v, *_ = _render(model, distance_m=500.0, seed=42)
 
         self.assertTrue(in_fov)
         max_px_far = self._max_pixel(frame_far)
 
         # 近距离参考
-        frame_near, _, _, _ = _render(model, distance_m=10.0, seed=42)
+        frame_near, _, _, _, *_ = _render(model, distance_m=10.0, seed=42)
         max_px_near = self._max_pixel(frame_near)
 
         # 远距离亮度应显著低于近距离
@@ -224,9 +224,9 @@ class TestBrightnessVariation(unittest.TestCase):
         )
         model = CameraImagingModel(cfg)
 
-        frame_d0, _, _, _ = _render(model, distance_m=0.0, seed=42)
-        frame_d100, _, _, _ = _render(model, distance_m=100.0, seed=42)
-        frame_d500, _, _, _ = _render(model, distance_m=500.0, seed=42)
+        frame_d0, _, _, _, *_ = _render(model, distance_m=0.0, seed=42)
+        frame_d100, _, _, _, *_ = _render(model, distance_m=100.0, seed=42)
+        frame_d500, _, _, _, *_ = _render(model, distance_m=500.0, seed=42)
 
         max_d0 = self._max_pixel(frame_d0)
         max_d100 = self._max_pixel(frame_d100)
@@ -250,7 +250,7 @@ class TestBrightnessVariation(unittest.TestCase):
         # 渲染 200 帧，收集最大像素值
         max_values = []
         for i in range(200):
-            frame, _, _, _ = _render(model, distance_m=0.0, seed=100 + i)
+            frame, _, _, _, *_ = _render(model, distance_m=0.0, seed=100 + i)
             max_values.append(self._max_pixel(frame))
 
         max_values = np.array(max_values, dtype=np.float64)
@@ -269,7 +269,7 @@ class TestBrightnessVariation(unittest.TestCase):
         model_no = CameraImagingModel(cfg_no_jitter)
         max_values_no = []
         for i in range(200):
-            frame, _, _, _ = _render(model_no, distance_m=0.0, seed=100 + i)
+            frame, _, _, _, *_ = _render(model_no, distance_m=0.0, seed=100 + i)
             max_values_no.append(self._max_pixel(frame))
         max_values_no = np.array(max_values_no, dtype=np.float64)
         variance_no = float(np.var(max_values_no))
@@ -298,7 +298,7 @@ class TestMissDetection(unittest.TestCase):
         """统计丢检率。"""
         miss_count = 0
         for i in range(n_frames):
-            frame, in_fov, u, v = _render(model, distance_m=distance_m,
+            frame, in_fov, u, v, *_ = _render(model, distance_m=distance_m,
                                           seed=base_seed + i)
             det = detect_beacon_centroid(frame, threshold=threshold)
             if in_fov and not det.found:
@@ -370,7 +370,7 @@ class TestMissDetection(unittest.TestCase):
         # 收集丢检帧
         miss_frames = []
         for i in range(500):
-            frame, in_fov, u, v = _render(model, distance_m=10.0,
+            frame, in_fov, u, v, *_ = _render(model, distance_m=10.0,
                                           seed=5000 + i)
             if in_fov:
                 det = detect_beacon_centroid(frame, threshold=180)
@@ -403,7 +403,7 @@ class TestMissDetection(unittest.TestCase):
         # 收集丢检案例
         miss_cases = []
         for i in range(500):
-            frame, in_fov, u, v = _render(model, distance_m=10.0,
+            frame, in_fov, u, v, *_ = _render(model, distance_m=10.0,
                                           seed=9000 + i)
             if in_fov:
                 det = detect_beacon_centroid(frame, threshold=180)

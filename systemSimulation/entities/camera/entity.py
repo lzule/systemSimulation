@@ -23,6 +23,9 @@ class CameraState:
     in_fov: bool
     u_px: float
     v_px: float
+    distance_m: float
+    sigma_px: float
+    brightness: float
 
 
 def detect_beacon_centroid(image: np.ndarray, threshold: int = None) -> Detection:
@@ -52,7 +55,7 @@ class CameraEntity:
 
         self.frame_id = 0
         self.last_frame: Optional[FramePacket] = None
-        self._last_state = CameraState(0.0, POWER_OFF, self.f_current_mm, self.f_target_mm, 0.0, 0, False, float("nan"), float("nan"))
+        self._last_state = CameraState(0.0, POWER_OFF, self.f_current_mm, self.f_target_mm, 0.0, 0, False, float("nan"), float("nan"), 0.0, float(self.cfg.beacon_sigma_px), 0.0)
 
     def power_on(self, timestamp: float) -> CommandResult:
         if self.power_state in (POWER_BOOTING, POWER_READY):
@@ -104,7 +107,7 @@ class CameraEntity:
         self.f_current_mm = self.zoom_ctrl.update(self.f_current_mm, self.f_target_mm, self.zoom_rate_cmd_mmps, dt)
         self.f_current_mm = float(np.clip(self.f_current_mm, self.cfg.focal_min_mm, self.cfg.focal_max_mm))
 
-    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float]:
+    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float, float, float]:
         return self.imaging.render_beacon_frame(alpha_rad, beta_rad, self.f_current_mm, timestamp, distance_m)
 
     def update(self, dt: float, timestamp: float, target_state: Dict[str, float], gimbal_state: Dict[str, float]) -> CameraState:
@@ -116,6 +119,9 @@ class CameraEntity:
         in_fov = False
         u_px = float("nan")
         v_px = float("nan")
+        distance_m = 0.0
+        sigma_px = float(self.cfg.beacon_sigma_px)
+        brightness = 0.0
         if self.power_state == POWER_READY:
             self._update_zoom(dt)
 
@@ -136,7 +142,7 @@ class CameraEntity:
             # 目标距离（用于距离相关成像模型）
             distance_m = math.sqrt(x * x + y * y + z * z)
 
-            frame, in_fov, u_px, v_px = self._render_frame(alpha, beta, timestamp, distance_m)
+            frame, in_fov, u_px, v_px, sigma_px, brightness = self._render_frame(alpha, beta, timestamp, distance_m)
             intrinsics = {
                 "f_mm": self.f_current_mm,
                 "f_px": self._focal_px(),
@@ -144,6 +150,7 @@ class CameraEntity:
                 "cy": self.cfg.resolution_h / 2.0,
                 "width": float(self.cfg.resolution_w),
                 "height": float(self.cfg.resolution_h),
+                "sigma_px": float(sigma_px),
             }
             gt = {"u_px": u_px, "v_px": v_px, "in_fov": float(in_fov)} if in_fov else None
             self.last_frame = FramePacket(timestamp=timestamp, image=frame, intrinsics=intrinsics, optional_gt=gt)
@@ -159,6 +166,9 @@ class CameraEntity:
             in_fov=in_fov,
             u_px=u_px,
             v_px=v_px,
+            distance_m=float(distance_m),
+            sigma_px=float(sigma_px),
+            brightness=float(brightness),
         )
         return self._last_state
 
@@ -174,6 +184,9 @@ class CameraEntity:
             "in_fov": s.in_fov,
             "u_px": s.u_px,
             "v_px": s.v_px,
+            "distance_m": s.distance_m,
+            "sigma_px": s.sigma_px,
+            "brightness": s.brightness,
         }
 
     def get_frame(self) -> Optional[FramePacket]:

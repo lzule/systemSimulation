@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 
 from simulation.gui.window import DashboardWindow
-from simulation.headless import apply_target_overrides
 from simulation.qt_compat import QtGui, QtWidgets, pg
 from simulation.types import AppConfig
 
@@ -21,8 +20,6 @@ def run_gui(cfg: AppConfig) -> None:
         raise RuntimeError("缺少 GUI 依赖，请确认 simulation 环境已安装 PyQt5。")
     if pg is None:
         raise RuntimeError("缺少 pyqtgraph 依赖，请确认 simulation 环境已安装 pyqtgraph。")
-
-    apply_target_overrides(cfg)
 
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("DigitalTwinDashboard")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 from collections import deque
-from typing import Any, Deque, Optional
+from typing import Any, Deque, List, Optional
 
 import numpy as np
 
@@ -28,6 +28,13 @@ class UiStateBuffer:
         self.err_hist: Deque[float] = deque(maxlen=max_curve_len)
         self.rate_hist: Deque[float] = deque(maxlen=max_curve_len)
         self.angle_err_hist: Deque[float] = deque(maxlen=max_curve_len)
+        self.atp_state_hist: Deque[str] = deque(maxlen=max_curve_len)
+
+        # 每帧关键指标（用于导出 metrics.csv）
+        self.metrics_log: List[dict] = []
+        # ATP 状态变迁事件（用于导出 event_log.json）
+        self.event_log: List[dict] = []
+        self._last_atp_state: str = ""
 
     def clear(self) -> None:
         with self._lock:
@@ -40,6 +47,10 @@ class UiStateBuffer:
             self.err_hist.clear()
             self.rate_hist.clear()
             self.angle_err_hist.clear()
+            self.atp_state_hist.clear()
+            self.metrics_log.clear()
+            self.event_log.clear()
+            self._last_atp_state = ""
 
     @staticmethod
     def _extract_detection(frame: Any) -> Detection:
@@ -66,37 +77,63 @@ class UiStateBuffer:
             yaw_deg_internal = float(snapshot.gimbal["yaw_deg_internal"])
             target_bearing_deg = math.degrees(math.atan2(y_m, x_m))
             angle_err = wrap_pm180(target_bearing_deg - yaw_deg_internal)
+            atp_state = str(snapshot.raspi.get("atp_state", ""))
 
             self.t_hist.append(t_s)
             self.x_hist.append(x_m)
             self.y_hist.append(y_m)
             self.rate_hist.append(float(snapshot.gimbal.get("yaw_rate_ref_dps", 0.0)))
             self.angle_err_hist.append(angle_err)
+            self.atp_state_hist.append(atp_state)
 
             if frame is None:
                 self.err_hist.append(float("nan"))
-                return
+                err = float("nan")
+            else:
+                det = self._extract_detection(frame)
+                fs = FrameSample(
+                    timestamp=float(frame.timestamp),
+                    image=frame.image.copy(),
+                    intrinsics=dict(frame.intrinsics),
+                    detection=det,
+                )
+                self.latest_frame = fs
+                self.frame_hist.append(fs)
 
-            det = self._extract_detection(frame)
-            fs = FrameSample(
-                timestamp=float(frame.timestamp),
-                image=frame.image.copy(),
-                intrinsics=dict(frame.intrinsics),
-                detection=det,
-            )
-            self.latest_frame = fs
-            self.frame_hist.append(fs)
+                u_px = float(snapshot.camera.get("u_px", float("nan")))
+                cx = float(frame.intrinsics.get("cx", 0.0))
+                err = float("nan") if not math.isfinite(u_px) else (u_px - cx)
+                self.err_hist.append(err)
 
-            u_px = float(snapshot.camera.get("u_px", float("nan")))
-            cx = float(frame.intrinsics.get("cx", 0.0))
-            err = float("nan") if not math.isfinite(u_px) else (u_px - cx)
-            self.err_hist.append(err)
+            # 记录每帧指标
+            self.metrics_log.append({
+                "t": t_s,
+                "x_m": x_m,
+                "y_m": y_m,
+                "z_m": float(snapshot.target.get("z_m", 0.0)),
+                "yaw_deg": yaw_deg_internal,
+                "angle_err_deg": angle_err,
+                "pixel_err": err,
+                "atp_state": atp_state,
+                "distance_m": float(snapshot.camera.get("distance_m", 0.0)),
+                "sigma_px": float(snapshot.camera.get("sigma_px", 0.0)),
+                "in_fov": int(bool(snapshot.camera.get("in_fov", False))),
+            })
+
+            # 检测 ATP 状态变迁
+            if atp_state and atp_state != self._last_atp_state:
+                self.event_log.append({
+                    "t": t_s,
+                    "from": self._last_atp_state,
+                    "to": atp_state,
+                })
+                self._last_atp_state = atp_state
 
     def read_latest(self) -> tuple[Optional[Any], Optional[FrameSample]]:
         with self._lock:
             return self.latest_snapshot, self.latest_frame
 
-    def read_curves(self) -> tuple[list[float], list[float], list[float], list[float], list[float], list[float]]:
+    def read_curves(self) -> tuple[list[float], list[float], list[float], list[float], list[float], list[float], list[str]]:
         with self._lock:
             return (
                 list(self.t_hist),
@@ -105,7 +142,12 @@ class UiStateBuffer:
                 list(self.err_hist),
                 list(self.rate_hist),
                 list(self.angle_err_hist),
+                list(self.atp_state_hist),
             )
+
+    def read_logs(self) -> tuple[list[dict], list[dict]]:
+        with self._lock:
+            return list(self.metrics_log), list(self.event_log)
 
     def find_frame_at_or_before(self, timestamp_s: float) -> Optional[FrameSample]:
         with self._lock:

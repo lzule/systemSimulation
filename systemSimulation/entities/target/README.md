@@ -159,7 +159,7 @@ world_obs = { "target": target_state.__dict__, ... }
 1. 在 `TargetConfig.motion_type` 的 `Literal[...]` 中加模式名
 2. 在 `MOTION_MODE_PARAMS` 中加模式→字段映射（控制 UI 显隐）
 3. 在 `TargetConfig` 中加新参数字段
-4. 在 `TargetKinematics2D.step()` 中加 `elif` 分支实现物理逻辑
+4. 在 `TargetKinematics3D.step()` 中加 `elif` 分支实现物理逻辑
 
 Config Editor 自动读取 `Literal` 类型生成下拉选项，并根据 `MOTION_MODE_PARAMS` 过滤显示对应参数。
 

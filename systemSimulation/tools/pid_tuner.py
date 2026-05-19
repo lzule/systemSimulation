@@ -113,7 +113,7 @@ def run_candidate(candidate: Candidate, duration_s: float, stable_from_s: float)
         px_err = math.nan
         yaw_rate_cmd = 0.0
         if frame is not None:
-            det = detect_beacon_centroid(frame.image, threshold=160)
+            det = detect_beacon_centroid(frame.image, threshold=camera_cfg.detection_threshold)
             if det.found:
                 found = True
                 px_err = float(det.cx - frame.intrinsics["cx"])

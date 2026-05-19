@@ -7,6 +7,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.digital_twin_runtime import DigitalTwinRuntime
+from entities.raspi.atp_control_program import AtpControlProgram
+from simulation.bootstrap import build_runtime
 
 
 class TestRuntimeApi(unittest.TestCase):
@@ -64,6 +66,58 @@ class TestRuntimeApi(unittest.TestCase):
         rt.gimbal_client.set_rate_target(0.0, 0.0, rt.t)
         ticks2 = [bool(rt.step().gimbal["angle_tick"]) for _ in range(120)]
         self.assertEqual(sum(ticks2), 0)
+
+    def test_build_runtime_exposes_atp_state_in_snapshot(self):
+        rt = build_runtime(0.0, obs_mode="research")
+        snap = rt.step(400)
+
+        self.assertIn("atp_state", snap.raspi)
+        self.assertIn("control_program_name", snap.raspi)
+        self.assertEqual(snap.raspi["control_program_name"], "BaselineTrackerProgram")
+        self.assertTrue(isinstance(snap.raspi["atp_state"], str))
+
+    def test_atp_control_program_exposes_named_state_in_snapshot(self):
+        rt = build_runtime(0.0, control_program=AtpControlProgram(), obs_mode="research")
+        snap = rt.step(400)
+
+        self.assertEqual(snap.raspi["control_program_name"], "AtpControlProgram")
+        self.assertIn(
+            snap.raspi["atp_state"],
+            {"SEARCH", "ACQUIRE", "TRACK_COARSE", "TRACK_FINE", "LOST", "REACQUIRE"},
+        )
+
+    def test_camera_snapshot_exposes_imaging_physics(self):
+        """快照中的 camera 应携带 distance_m / sigma_px / brightness 三项物理量。"""
+        rt = build_runtime(0.0, obs_mode="research")
+        snap = rt.step(50)
+
+        self.assertIn("distance_m", snap.camera)
+        self.assertIn("sigma_px", snap.camera)
+        self.assertIn("brightness", snap.camera)
+        # 默认 beacon_sigma_px=6.0, sigma_ref=80m, 距离约 100m 时 sigma ≈ 6.0/(1+100/80) ≈ 2.67
+        # 允许较大误差（距离不固定）
+        self.assertGreater(snap.camera["distance_m"], 0.0)
+        self.assertGreater(snap.camera["sigma_px"], 0.0)
+        self.assertLessEqual(snap.camera["sigma_px"], 6.0)  # 不超过 base
+
+    def test_camera_sigma_decreases_with_distance(self):
+        """启用距离相关 sigma 后，距离越远 sigma 越小（与物理模型一致）。"""
+        from config import camera_cfg
+        original_ref = camera_cfg.sigma_ref_distance_m
+        original_base = camera_cfg.beacon_sigma_px
+        camera_cfg.sigma_ref_distance_m = 50.0
+        camera_cfg.beacon_sigma_px = 6.0
+        try:
+            rt = build_runtime(0.0, obs_mode="research")
+            snap = rt.step(50)
+            d = snap.camera["distance_m"]
+            sigma = snap.camera["sigma_px"]
+            expected = 6.0 / (1.0 + d / 50.0)
+            self.assertAlmostEqual(sigma, expected, places=5)
+            self.assertLess(sigma, 6.0)
+        finally:
+            camera_cfg.sigma_ref_distance_m = original_ref
+            camera_cfg.beacon_sigma_px = original_base
 
 
 if __name__ == "__main__":

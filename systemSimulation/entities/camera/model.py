@@ -22,7 +22,7 @@ class CameraImagingModel:
     def fov_v_half_rad(self, f_mm: float) -> float:
         return math.atan(self.cfg.sensor_h_mm / (2.0 * f_mm))
 
-    def render_beacon_frame(self, alpha_rad: float, beta_rad: float, f_mm: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float]:
+    def render_beacon_frame(self, alpha_rad: float, beta_rad: float, f_mm: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float, float, float]:
         h, w = int(self.cfg.resolution_h), int(self.cfg.resolution_w)
         frame = np.zeros((h, w), dtype=np.uint8)
         sigma_base = self.cfg.beacon_sigma_px
@@ -38,6 +38,7 @@ class CameraImagingModel:
         in_fov = abs(alpha_rad) <= fov_h_half and abs(beta_rad) <= fov_v_half
         u = float("nan")
         v = float("nan")
+        brightness = 0.0
         if in_fov:
             f_px = self.focal_px(f_mm)
             cx = w / 2.0
@@ -75,4 +76,4 @@ class CameraImagingModel:
 
         noise = np.random.normal(0.0, scene_cfg.pixel_noise_std, size=frame.shape)
         frame = np.clip(frame.astype(np.float32) + noise, 0.0, 255.0).astype(np.uint8)
-        return frame, in_fov, u, v
+        return frame, in_fov, u, v, float(sigma), float(brightness)

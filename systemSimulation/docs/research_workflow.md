@@ -1,0 +1,326 @@
+# 研究工作流手册
+
+> 本手册描述从"跑实验"到"出结论"的完整研究链路。
+> 各工具的详细参数说明，请参见[工具手册](tools_guide.md)。
+
+---
+
+## 工作流总览
+
+```
+第1步：运行 benchmark ────→ 第2步：汇总结果 ────→ 第3步：对比基线
+                                                       ↓
+                                              第4步：诊断退化
+                                                       ↓
+                                              第5步：生成图表
+                                                       ↓
+                                              第6步：沉淀记录
+```
+
+---
+
+## 第1步：运行 benchmark
+
+### 目的
+
+对多个算法在多个场景下进行系统性评测，产出可复现的结构化实验数据。
+
+### 命令
+
+```bash
+# 全量评测（推荐首次运行）
+conda run -n simulation python tools/run_benchmark.py
+
+# 指定算法和场景
+conda run -n simulation python tools/run_benchmark.py \
+    --algorithms atp_search_track_baseline rate_pi linear_kf_tracker \
+    --scenarios B1 B2 B3 \
+    --duration 20
+
+# 带实验备注（自动生成实验日志骨架）
+conda run -n simulation python tools/run_benchmark.py \
+    --experiment-note "测试线性卡尔曼预测器在延时场景下的表现"
+```
+
+### 预期输出
+
+```
+output/experiments/
+  ├── summary.csv                # 自动生成
+  ├── summary_grouped.csv        # 自动生成
+  ├── summary.json               # 自动生成
+  └── S2/B1/atp_search_track_baseline/seed_42/
+        ├── result.json          # 汇总指标
+        ├── metrics.csv          # 逐 tick 数据（~4000行/实验）
+        ├── notes.md             # 实验元信息
+        ├── error_curve.png      # 误差曲线
+        └── state_timeline.png   # ATP 状态时间线
+```
+
+### 注意事项
+
+- 全量评测（6 算法 × 3 场景 × 5 种子）约需 15-30 分钟
+- 如需快速验证，可用 `--seeds 42 --duration 5` 缩短时间
+- `--obs-mode research` 是研究推荐模式（不含目标真值）
+
+---
+
+## 第2步：汇总结果
+
+### 目的
+
+将分散的实验结果汇总为排名表和聚合统计。
+
+### 命令
+
+```bash
+# 默认汇总（生成 CSV + JSON + 控制台排名）
+conda run -n simulation python tools/summarize_results.py
+
+# 指定输入目录
+conda run -n simulation python tools/summarize_results.py --input-dir output/experiments
+
+# 按特定指标排序
+conda run -n simulation python tools/summarize_results.py --sort-by rms_pixel_error
+```
+
+### 预期输出
+
+控制台输出排名表（示例）：
+
+```
+算法排名（按 rms_pixel_error 升序）：
+1. atp_search_track_baseline  RMS: 7.55 px  跟踪率: 100%
+2. alpha_beta_tracker          RMS: 8.12 px  跟踪率: 100%
+3. rate_pi                     RMS: 9.34 px  跟踪率: 98%
+...
+```
+
+文件输出：
+- `summary.csv` — 每行一个实验
+- `summary_grouped.csv` — 按算法×场景分组的均值/标准差
+- `summary.json` — 结构化数据
+
+### 衔接
+
+汇总后的数据直接用于第3步对比和第5步出图。
+
+---
+
+## 第3步：对比基线
+
+### 目的
+
+比较两组实验结果，识别哪些指标提升、哪些退化、是否超阈值。
+
+### 场景 A：两个版本对比
+
+```bash
+conda run -n simulation python tools/compare_results.py \
+    --baseline output/experiments_v1 \
+    --new output/experiments_v2
+```
+
+### 场景 B：同目录跨算法对比
+
+```bash
+conda run -n simulation python tools/compare_results.py \
+    --baseline output/experiments \
+    --new output/experiments \
+    --baseline-algorithms atp_search_track_baseline \
+    --new-algorithms linear_kf_tracker
+```
+
+### 预期输出
+
+`comparison.md` 报告示例：
+
+```markdown
+## 对比结果
+
+### 改善项
+- rms_pixel_error: 8.12 → 7.55 (改善 7.0%)
+
+### 退化项
+- lock_loss_count: 0 → 3 (退化)
+
+### 超阈值报警
+- （无）
+```
+
+### 判定标准
+
+| 判定 | 含义 |
+|------|------|
+| improved | 指标显著改善 |
+| neutral | 变化在阈值内 |
+| regression_warning | 有退化趋势但未超阈值 |
+| regressed | 超过退化阈值 |
+
+---
+
+## 第4步：诊断退化
+
+### 目的
+
+当第3步发现退化时，从 4 个维度定位退化原因。
+
+### 命令
+
+```bash
+# 诊断特定算法
+conda run -n simulation python tools/diagnose_algorithm.py \
+    --algorithm linear_kf_tracker \
+    --scenario B3
+
+# 与基线对比诊断
+conda run -n simulation python tools/diagnose_algorithm.py \
+    --algorithm linear_kf_tracker \
+    --baseline-algorithm atp_search_track_baseline
+```
+
+### 4 个诊断维度
+
+#### 维度1：误差分时段分解
+
+按 ATP 状态（SEARCH/ACQUIRE/TRACK_COARSE/TRACK_FINE/LOST/REACQUIRE）分段统计像素误差。
+
+典型发现：
+- SEARCH/REACQUIRE 阶段误差大 → 搜索策略需要优化
+- TRACK_COARSE 阶段误差大 → 控制器增益不足
+- TRACK_FINE 阶段误差大 → 稳态性能问题
+
+#### 维度2：ATP 状态转换对比
+
+统计状态转换次数、驻留时长、LOST/REACQUIRE 事件。
+
+典型发现：
+- 频繁 LOST → 检测不稳定
+- 长时间 SEARCH → 搜索效率低
+- TRACK_FINE 占比低 → 收敛慢
+
+#### 维度3：控制行为对比
+
+检测控制命令的振荡、饱和、零命令比例。
+
+典型发现：
+- 高频振荡 → 控制增益过大
+- 频繁饱和 → 控制器输出超限
+- 零命令比例高 → 目标丢失频繁
+
+#### 维度4：预测代理分析
+
+通过误差趋势推断预测效果（代理分析，非直接预测误差）。
+
+典型发现：
+- 误差持续增大 → 预测器发散
+- 稳态误差大 → 预测偏差未校正
+
+### 预期输出
+
+- `diagnosis_{algorithm}.md` — 可读诊断报告
+- `diagnosis_{algorithm}.json` — 结构化数据
+
+---
+
+## 第5步：生成图表
+
+### 目的
+
+生成可视化对比图，用于报告和演示。
+
+### 命令
+
+```bash
+# 生成全部图表
+conda run -n simulation python tools/plot_comparison.py
+
+# 仅生成特定图表
+conda run -n simulation python tools/plot_comparison.py --plots heatmap ranking
+
+# 指定场景
+conda run -n simulation python tools/plot_comparison.py --scenarios B1 B3
+
+# 指定基线算法（影响箱线图排序）
+conda run -n simulation python tools/plot_comparison.py --plots phase-box \
+    --baseline-algorithm atp_search_track_baseline
+```
+
+### 4 种图表
+
+| 图表 | 文件名 | 用途 |
+|------|--------|------|
+| 误差叠加 | `error_overlay_{scenario}.png` | 对比各算法误差曲线随时间变化 |
+| RMS 热力图 | `rms_heatmap.png` | 算法×场景的 RMS 矩阵 |
+| 排名柱状图 | `ranking_bar.png` | 多指标算法排名 |
+| ATP 分段箱线图 | `phase_boxplot_{scenario}.png` | 按 ATP 状态分段的误差分布 |
+
+---
+
+## 第6步：沉淀实验记录
+
+### 目的
+
+记录实验条件、结论和后续计划，防止研究结论流失。
+
+### 方式 A：使用 --experiment-note（自动生成）
+
+```bash
+conda run -n simulation python tools/run_benchmark.py \
+    --experiment-note "验证线性卡尔曼预测器在 B3 场景的表现"
+```
+
+benchmark 结束后自动生成 `experiment_log.md`，包含：
+- 实验时间和备注
+- 运行命令
+- 算法/场景/种子列表
+- RMS 排名表
+
+### 方式 B：手动补充
+
+在 `experiment_log.md` 或独立笔记中补充：
+- 实验结论（哪个算法在哪个场景表现更好）
+- 退化原因（诊断发现的根本原因）
+- 后续计划（下一步要调什么参数或试什么算法）
+
+---
+
+## 完整工作流示例
+
+以下是一个从零开始的研究流程：
+
+```bash
+# 1. 运行 benchmark
+conda run -n simulation python tools/run_benchmark.py \
+    --algorithms atp_search_track_baseline linear_kf_tracker \
+    --scenarios B1 B2 B3 \
+    --experiment-note "基线 vs 卡尔曼预测器对比"
+
+# 2. 汇总结果
+conda run -n simulation python tools/summarize_results.py
+
+# 3. 对比（同目录跨算法）
+conda run -n simulation python tools/compare_results.py \
+    --baseline output/experiments --new output/experiments \
+    --baseline-algorithms atp_search_track_baseline \
+    --new-algorithms linear_kf_tracker
+
+# 4. 诊断退化（如果对比发现退化）
+conda run -n simulation python tools/diagnose_algorithm.py \
+    --algorithm linear_kf_tracker --scenario B3 \
+    --baseline-algorithm atp_search_track_baseline
+
+# 5. 生成图表
+conda run -n simulation python tools/plot_comparison.py \
+    --algorithms atp_search_track_baseline linear_kf_tracker --plots all
+
+# 6. 查看结果
+#    - 控制台排名表
+#    - output/experiments/comparison.md
+#    - output/experiments/diagnosis_linear_kf_tracker.md
+#    - output/experiments/plots/*.png
+```
+
+---
+
+*工作流手册完毕。各工具的详细参数和更多用法请参见[工具手册](tools_guide.md)。*

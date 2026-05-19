@@ -13,13 +13,13 @@ class CameraConfig:
     focal_min_mm: float = 4.4
     focal_max_mm: float = 200.0
     boot_delay_s: float = 0.5
-    beacon_sigma_px: float = 3.2
-    detection_threshold: int = 180
+    beacon_sigma_px: float = 6.0
+    detection_threshold: int = 100
     # 距离相关 sigma
-    sigma_ref_distance_m: float = 0.0        # 0 = 固定 sigma（向后兼容）
+    sigma_ref_distance_m: float = 80.0       # 0 = 固定 sigma（向后兼容）；80m = 参考距离
     # 亮度变化
     brightness_base: float = 1.0
-    brightness_ref_distance_m: float = 0.0   # 0 = 固定亮度（向后兼容）
+    brightness_ref_distance_m: float = 80.0  # 0 = 固定亮度（向后兼容）；80m = 参考距离
     brightness_jitter_std: float = 0.0        # 0 = 无抖动
     # 丢检
     miss_detection_base_rate: float = 0.0     # 0 = 永不丢检（向后兼容）

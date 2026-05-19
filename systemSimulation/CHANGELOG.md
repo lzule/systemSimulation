@@ -2,6 +2,352 @@
 
 ---
 
+## 071-20260519-152049 角度曲线额外实验方案补充：加入轨迹预测算法曲线设计
+
+**目的**：在已有额外实验方案基础上，补齐“启用轨迹预测算法后”该如何画角度曲线、如何区分控制用曲线和预测评估曲线，避免后续实验口径混乱。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **docs/额外实验-角度曲线/角度曲线实验方案.md** — 新增“使用轨迹预测算法后的扩展方案”章节，明确控制用曲线与预测效果评估曲线分开设计
+2. **docs/额外实验-角度曲线/角度曲线实验方案.md** — 补充 `pred_target_pitch`、`pred_err_pitch`、`pred_true_err_pitch` 等曲线定义
+3. **docs/额外实验-角度曲线/角度曲线实验方案.md** — 补充预测实验输出项与 `predictor_samples.csv` 建议字段
+4. **docs/doc-structure.md** — 增加角度曲线额外实验方案入口，便于后续查找
+
+**验证**：
+- 文档已落盘并可索引
+- 方案口径已补齐：基础版与预测版分离
+
+---
+
+## 070-20260519-112637 GUI 综合优化方案 v2（Step 1-4）全量实施
+
+**目的**：针对 GUI 10 项问题做综合优化，含光斑显示、时间轴重构、诊断面板重构、顶部下拉、自动保存、世界视图 z 编码。
+**修改者**：Claude Code
+
+**修改内容**：
+
+**Step 1 — 光斑显示 + 双视角信息精简**
+1. **config.py** — `CameraConfig` 默认值：`beacon_sigma_px` 3.2→6.0，`detection_threshold` 180→100，`sigma_ref_distance_m` 0→80.0，`brightness_ref_distance_m` 0→80.0（启用距离衰减）
+2. **simulation/gui/panels/camera_panel.py** — 移除实心红点，改为 1px 小十字标记；保留虚线轮廓圈（sigma 同步）
+3. **simulation/gui/window.py** — `_camera_info_text` 简化为 `du/dv | sigma=xx.xpx`
+
+**Step 2 — 时间轴重构 + 诊断面板重构**
+4. **simulation/gui/window.py** — `_build_timeline`：移除独立 `plot_atp` 行，改用 `LinearRegionItem` 叠加在 `plot_rate` 上显示 ATP 状态背景色；新增 `lbl_current_atp` 标签
+5. **simulation/gui/window.py** — `_draw_timeline`：按 ATP 状态段生成半透明色区域（SEARCH红/ACQUIRE橙/TRACK_COARSE蓝/TRACK_FINE绿）
+6. **simulation/gui/window.py** — `_build_diag_section`：`QTabWidget+QTableWidget` 改为 `QTreeWidget`，4 个顶级节点全部展开，字段名带中文和单位
+7. **simulation/gui/window.py** — `_update_diag_tab` / `_fill_diag_tree`：字段值带单位格式化
+
+**Step 3 — 顶部下拉 + 删除应用延时按钮 + 重命名 τ**
+8. **simulation/gui/window.py** — 工具栏新增 3 个 `QComboBox`（算法/观测模式/目标运动），切换时立即 reset
+9. **simulation/gui/window.py** — 删除"应用延时"按钮（`btn_apply_delay`）
+10. **simulation/gui/window.py** — 延时标签改为"链路延时…│云台响应τ: 30ms（一阶惯性，非通信延时）"
+11. **simulation/gui/window.py** — 新增 `_build_control_program()` / `_on_combo_changed()` 方法
+
+**Step 4 — 自动保存 + 世界视图 z 编码**
+12. **simulation/state_buffer.py** — 新增 `metrics_log`（每帧指标）和 `event_log`（ATP 状态变迁）缓冲；`push()` 同步写入；新增 `read_logs()` 接口
+13. **simulation/gui/window.py** — `_on_worker_finished` 触发 `_export_session_results()`，自动输出 `output/session_<ts>/`：dashboard.png / summary.json / metrics.csv / event_log.json / scene_config.json
+14. **simulation/gui/window.py** — `_draw_world`：目标颜色按 z 编码（z>0 偏蓝，z<0 偏黄），尺寸随 z 变化，标题显示 z 值和图例说明
+15. **tools/pid_tuner.py** — `detect_beacon_centroid` 阈值从硬编码 160 改为 `camera_cfg.detection_threshold`（修复因亮度衰减导致的检测失败）
+
+**验证**：
+- 冒烟测试通过
+- 全量 160 个测试全部通过
+
+## 069-20260519-075053 相机模型物理量打通到 UI：距离/sigma/亮度暴露并显示
+
+**目的**：相机模型已实现"目标越远越小、越远越暗"的距离相关 sigma 和亮度，但物理量没有暴露到快照与 UI，用户看不到验证。本次把链路打通。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **entities/camera/model.py** — `render_beacon_frame()` 返回值从 4 元组扩展为 6 元组，新增 `sigma_px` 与 `brightness`
+2. **entities/camera/entity.py** — `CameraState` 新增 `distance_m` / `sigma_px` / `brightness` 三字段；`update()` 写入；`get_state()` 暴露；`FramePacket.intrinsics` 携带 `sigma_px`
+3. **simulation/gui/window.py** — 顶部摘要条新增"距离: xx.xm"；状态卡片把 backlog 换成"距离 xx.xm"；诊断面板 camera 标签页新增 distance_m / sigma_px / brightness
+4. **simulation/gui/panels/camera_panel.py** — 双视角新增空心轮廓圈，半径 = 3×sigma_px，跟随光斑大小动态变化
+5. **tests/test_runtime_api.py** — 新增 2 个测试：`snap.camera` 包含三项物理量；启用 `sigma_ref_distance_m` 后 sigma 与 distance 反比关系成立
+6. **tests/test_2axis_geometry.py** / **tests/test_near_real_imaging.py** — 解包语法适配 6 元组返回值
+
+**验证**：
+- 冒烟测试通过
+- 全量测试 160 tests 全部通过
+- `snap.camera` 包含 distance_m=100.7 / sigma_px=3.2 / brightness=1.0（默认配置）
+- 启用 `sigma_ref_distance_m=50.0` 后，远距离 sigma 严格小于 base，与公式吻合
+
+---
+
+## 068-20260518-225025 GUI 增量升级：摘要条+状态卡片+ATP状态带+导出增强
+
+**目的**：按 GUI 重设计方案执行4步增量升级，提升仪表盘可用性。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **simulation/gui/window.py** — 控制栏拆为两层：顶部状态摘要条（ATP/算法/obs_mode/目标/延时/backlog 实时刷新）+ 操作按钮条
+2. **simulation/gui/window.py** — 核心状态从 GridLayout 文本表改为 2×3 卡片网格（误差/姿态/uv/in_fov/backlog），带颜色语义
+3. **simulation/gui/window.py** — 右侧信息区从 Tab 改为卡片+诊断区平铺，stretch 调整为 5:2:3
+4. **simulation/state_buffer.py** — 新增 `atp_state_hist` 存储，`read_curves()` 返回 7 元组
+5. **simulation/gui/window.py** — 时间轴新增 ATP 状态带（第3行窄条形图，按状态着色）
+6. **simulation/gui/window.py** — 截图导出增强：输出到 `output/ui_export_<ts>/` 目录，含 `dashboard.png` + `summary.json`
+
+**验证**：
+- 冒烟测试通过
+- 全量测试 158 tests 全部通过
+
+---
+
+## 067-20260518-135704 GUI 设计文档归档整理与重复初始化去重
+
+**目的**：把 GUI 重设计方案归入阶段6文档目录，统一文档位置，顺手去掉 GUI 路径里重复的 `apply_target_overrides()` 调用，让文档口径和代码现状保持一致。  
+**修改者**：Codex
+
+**修改内容**：
+1. **docs/阶段6-系统手册与维护/GUI重设计方案.md** — 将 GUI 设计方案移入阶段6目录，和同阶段材料归档到一起
+2. **docs/doc-structure.md** — 更新 GUI 设计方案入口路径，避免后续查找混乱
+3. **simulation/gui/runner.py** — 删除 GUI 启动时多余的 `apply_target_overrides(cfg)` 调用，保留窗口内部那次
+4. **docs/阶段6-系统手册与维护/GUI重设计方案.md** — 同步修正文档内的实现说明，反映当前实际状态
+
+**验证**：
+- 文档已归档到阶段6目录
+- `apply_target_overrides` 的 GUI 路径调用已去重
+
+## 066-20260518-131448 GUI 设计方案复核修订：补齐边界约束、兼容性和可视化示意
+
+**目的**：在 Claude 对 GUI 方案的二次审阅基础上，继续补齐遗漏点，使设计文档更贴近当前工程边界，也更方便后续直接拆开发。  
+**修改者**：Codex
+
+**修改内容**：
+1. **docs/阶段6-系统手册与维护/GUI重设计方案.md** — 重写并补强 GUI 设计方案，明确本次不做的范围、增量改造边界和非 ATP 兼容要求
+2. **docs/阶段6-系统手册与维护/GUI重设计方案.md** — 增加更直观的 ASCII 布局图，包括当前布局、目标布局、时间轴增强和状态卡片示意
+3. **docs/阶段6-系统手册与维护/GUI重设计方案.md** — 补充导出定义、尺寸适配、涉及文件边界和风险评估
+4. **docs/doc-structure.md** — 新增 GUI 设计方案入口，方便后续查阅
+
+**验证**：
+- 设计文档已更新并落盘
+- 文档索引已补充 GUI 设计方案入口
+
+---
+
+## 065-20260518-003058 阶段6收口补修：ATP 状态打通到运行快照，盘点口径与实际一致
+
+**目的**：修复阶段6收口中剩余的真实链路问题，确保 GUI 读取的 ATP 状态来自实际运行快照，而不是仅停留在 `get_state()` 层；同时清理盘点清单中的前后矛盾口径。  
+**修改者**：Codex
+
+**修改内容**：
+1. **entities/raspi/entity.py** — `RaspiState` 新增 `atp_state` 和 `control_program_name`，并在 `update()` 中同步写入，确保 `snapshot.raspi` 真正携带 ATP 状态
+2. **tests/test_runtime_api.py** — 新增运行时验证，确认 `build_runtime()` 后的真实快照包含 `atp_state` 和 `control_program_name`
+3. **docs/阶段6-系统手册与维护/阶段6盘点清单.md** — 修正 ATP 状态描述与 CLI/GUI 对照表，使文档口径与当前实际行为一致
+
+**验证**：
+- `conda run -n simulation python -m unittest tests.test_runtime_api`
+- `conda run -n simulation python app.py --no-gui --mode offline --duration 1.0`
+- `conda run --no-capture-output -n simulation python -m unittest discover -s tests`
+
+---
+
+## 064-20260517-163000 Codex 二轮审阅修复：GUI 显示补齐 + 完成口径修正 + README 行数去除
+
+**目的**：修正 Codex 二轮审阅指出的 P1-P3 问题：GUI 显示层补齐、完成口径修正、行数硬指标去除。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **entities/raspi/entity.py** — `get_state()` 新增 `atp_state`（从控制程序的 state_machine 读取）和 `control_program_name` 字段
+2. **simulation/gui/window.py** — 核心面板新增 ATP 状态（带颜色）、观测模式、目标运动类型三行显示；诊断面板树莓派标签页新增 atp_state/control_program 字段
+3. **CHANGELOG.md** — 062 条目标题从"阶段6全部交付"改为"主体交付"，口径不再超前
+4. **README.md** — 文档导航表移除固定行数写法
+5. **docs/阶段6-系统手册与维护/阶段6详细开发计划.md** — 移除行数硬指标
+6. **docs/阶段6-系统手册与维护/阶段6盘点清单.md** — GUI 缺口项标记为已修复
+
+**验证**：
+- 冒烟测试通过
+- 全量测试 156 tests 全部通过
+- 8 个场景模板全部真实运行验证（constant_velocity/sinusoidal/random_walk/waypoint-2D/waypoint-3D/constant_accel/delay-52ms/default-sinusoidal）
+
+---
+
+## 063-20260517-154655 Codex 审阅修复：4 项问题全部修正（代码 bug + 文档不一致）
+
+**目的**：修正 Codex 审阅阶段6产出时发现的 4 项问题，确保文档与代码一致。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **tools/record_session.py**（bug 修复）— `--obs-mode` CLI 参数未传递给 `build_runtime()`，现已添加 `obs_mode=cfg.obs_mode`
+2. **docs/tools_guide.md** — replay_session 章节新增限制说明：`obs["frame"]` 始终为 None，依赖帧数据的控制程序无法回放
+3. **runtime/README.md** — 延时拆分规则从旧的 1:1:0.5:1 修正为当前代码的 25%/50%/25%/25% 比例分配
+4. **entities/target/README.md** — 扩展点章节中 `TargetKinematics2D.step()` 引用修正为 `TargetKinematics3D.step()`
+5. **simulation/gui/window.py**（bug 修复）— `__init__` 和 `_on_reset` 中添加 `apply_target_overrides(self.cfg)` 调用，使 `--target-type` 和 `--waypoints` 在 GUI 模式下生效
+6. **docs/system_manual.md** — FAQ 中 `--target-type` 在 GUI 模式不生效的条目更新为已修复
+
+**验证**：
+- 冒烟测试通过
+- 全量测试 156 tests 全部通过
+
+---
+
+## 062-20260517-154018 阶段6C+6D完成：实例体系+场景模板+维护规则，主体交付
+
+**目的**：完成子阶段6C（实例体系与场景模板）和6D（维护规则），主体交付。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **docs/examples_guide.md**（新增 ~180 行）— 实例体系说明
+   - 7 类实例：快速启动/2D基础/3D基础/延时退化/benchmark对比/自定义控制程序/观测模式对比
+   - 每个实例含可运行命令和预期结果
+
+2. **docs/scenarios_catalog.md**（新增 ~200 行）— 典型场景模板
+   - 4 个 2D 模板（匀速/正弦/随机/航点）+ 4 个 3D 模板（穿越/振荡/巡航/加速）+ 延时对比模板
+   - 每个模板含目的/参数/适合验证的问题/预期现象，全部经过真实运行验证
+
+3. **docs/maintenance_guide.md**（新增 ~150 行）— 维护规则
+   - 维护检查清单（7 种变更类型 × 必须同步/可选同步）
+   - 新增工具/算法/场景模板规则
+   - 文档边界规则（README vs 主手册 vs 阶段文档）
+   - GUI 修改同步规则 + CHANGELOG 规则
+
+**验证**：
+- 6 种场景模板真实运行验证通过（constant_velocity/random_walk/constant_accel/waypoints/delay-ms/obs-mode），完整 8 模板验证见 064
+- 全量测试 156 tests 全部通过
+- 冒烟测试通过
+
+---
+
+## 061-20260517-133905 阶段6B主手册+工具手册+工作流手册+接入指南+README收敛+导航重构
+
+**目的**：执行子阶段6B，交付完整的文档体系。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **docs/system_manual.md**（新增 ~300 行）— 系统主手册
+   - 平台架构、数据流、快速启动、7 种运行方式、研究流程概览、输出解读、常见问题、目录结构、参数速查表
+
+2. **docs/tools_guide.md**（新增 ~280 行）— 工具手册
+   - 16 个工具按 7 类分组，每个含用途/命令/参数/输入输出/衔接关系
+
+3. **docs/research_workflow.md**（新增 ~200 行）— 研究工作流手册
+   - 6 步完整链路：benchmark → 汇总 → 对比 → 诊断 → 出图 → 沉淀
+
+4. **docs/algorithm_integration_guide.md**（新增 ~250 行）— 算法接入指南
+   - 4 种接入方式（临时加载/正式注册/tracker-predictor组合/角度模式）
+   - 最小示例代码、Tracker/Predictor 协议、常见错误
+
+5. **README.md**（从 512 行收敛到 ~100 行）— 改为入口索引
+   - 仅保留快速启动、文档导航（按角色/按任务）、架构概要、实体文档索引
+
+6. **docs/doc-structure.md**（从 74 行扩展到 ~120 行）— 改为导航页
+   - 新增按角色导航和按任务导航
+   - 补齐阶段3-6 文档条目
+   - 更新知识点归属（5 种运动模式、ATP 状态机、benchmark 等）
+
+**验证**：冒烟测试通过；全量文档交叉引用一致。
+
+---
+
+## 060-20260517-132515 阶段6A盘点执行：文档/工具/GUI三维盘点完成，产出盘点清单
+
+**目的**：执行阶段6A（现状盘点与收口定稿），形成阶段6后续工作的共同基线。
+**修改者**：Claude Code
+
+**修改内容**：
+
+1. **docs/阶段6-系统手册与维护/阶段6盘点清单.md**（新增）
+   - 文档角色矩阵：10 篇核心文档逐篇盘点，明确受众、过时程度、重叠关系和推荐定位
+   - 工具矩阵：16 个工具逐个分类（5 主流程 + 9 辅助 + 2 待评估），确认主研究链路已完整闭环
+   - GUI 差距表：已具备 12 项 / 已具备但未表达 7 项 / 仍缺失 2 项（含 ATP 状态暴露链路和 GUI 路径 target_type 不生效 bug）
+   - 盘点结论：优先修复 doc-structure 导航过时、README 收敛、工具手册缺失三项 P0
+
+2. **docs/阶段6-系统手册与维护/阶段6需求分析文档.md**（修订）
+   - 补充精确现状数据（行数、GUI 字段清单、工具预分类）
+   - 增加 GUI 差距的代码行号级定位
+   - 新增量化验收指标（9.1 节）
+
+3. **docs/阶段6-系统手册与维护/阶段6详细开发计划.md**（修订）
+   - 新增任务依赖关系图
+   - 工具矩阵预分类表、GUI 修改范围表
+   - 总工作量预估：文档 1750-2500 行 + GUI 代码小到中等规模
+
+**验证**：盘点清单已覆盖全部文档、工具和 GUI 三维盘点，结论可直接支撑后续子阶段 6B-6D 实施。
+
+---
+
+## 059-20260517-131117 阶段6文档二次审阅修正与口径收紧
+
+**目的**：对 Claude 在阶段6文档上的二次细化结果继续复审，修正“现状精确数字已过时”“GUI 改动量估计过轻”“任务依赖写得过死”等会误导后续实施判断的问题。
+**修改者**：Codex
+
+**修改内容**：
+
+1. **docs/阶段6-系统手册与维护/阶段6需求分析文档.md**
+   - 将文中的文件行数口径改为“当前快照记录”，避免把易变数字写成长期稳定事实
+   - 按当前仓库真实状态修正现状数据：
+     - `README.md`：504 → 当前 512 行
+     - `docs/树莓派控制程序开发手册.md`：459 → 当前 458 行
+     - `docs/doc-structure.md`：75 → 当前 74 行
+   - 收紧 GUI 相关需求表述：明确 ATP 状态当前尚未进入 `snapshot.raspi`，若纳入本轮 GUI 适配，需先补齐状态暴露链路，不能只按界面加标签估算
+   - 将 README 目标从“硬性 150 行以内”收紧为“显著收敛为轻入口页”，避免把版式数字当成核心验收目标
+
+2. **docs/阶段6-系统手册与维护/阶段6详细开发计划.md**
+   - 修正盘点表中的现状数字，与当前仓库真实行数一致
+   - 将 GUI 改造描述从“`window.py` +15-25 行”改为更真实的“小到中等改动，可能跨 3-5 个文件”
+   - 在任务 J 中补充说明：ATP 状态显示不仅涉及 GUI，还可能涉及 `entities/raspi/entity.py`、状态输出链路和相关测试
+   - 在验收标准和风险控制中去掉对单文件行数的刚性承诺，改为以“范围小、链路清楚、不引入额外框架改造”为控制目标
+   - 补充说明：GUI 任务 J 的严格前置是 6A 的差距盘点与边界决策；只有在需要把场景/实例标签直接带入界面时，才参考 6C 输出
+
+**校对与验证**：
+
+1. 已按 `AGENTS.md` 要求使用 `Get-Date -Format yyyyMMdd-HHmmss` 获取真实时间戳 `20260517-131117`
+2. 已再次核对当前仓库真实文件行数：
+   - `README.md`：512
+   - `docs/使用手册.md`：153
+   - `docs/树莓派控制程序开发手册.md`：458
+   - `docs/doc-structure.md`：74
+   - `app.py`：7
+3. 已核对当前实现链路：
+   - GUI 已显示 yaw、pitch、u、v、backlog、obs_lag
+   - ATP 状态机存在于控制程序侧，但当前 `snapshot.raspi` 尚未暴露 ATP 状态
+   - 因此“GUI 只加少量标签即可显示 ATP 状态”的估计不成立，已在文档中收紧
+
+---
+
+## 058-20260517-122041 阶段6文档审阅修订与计划收口
+
+**目的**：针对 Claude 产出的阶段6需求文档与详细开发计划进行复审，修正与当前仓库现状不一致、范围定义偏轻或前置条件缺失的问题，使阶段6后续实施建立在准确盘点和稳定口径之上。
+**修改者**：Codex
+
+**修改内容**：
+
+1. **docs/阶段6-系统手册与维护/阶段6需求分析文档.md**
+   - 将阶段6定位从单纯“手册整理与维护更新”收紧为“系统手册、实例体系与维护治理”
+   - 新增“阶段6前置盘点与差距清单”作为 P0 前置要求，明确文档、工具、实例、GUI、维护规则必须先盘点再实施
+   - 修正 GUI 现状表述，避免将当前已具备的双轴与链路信息误写成“一维旧界面”
+   - 明确 `app.py` 只是薄入口，阶段6重点应放在 CLI、GUI 和主入口口径统一，而不是把修改 `app.py` 本身当作主目标
+   - 补强“树莓派控制程序编写”“新算法接入平台”“标准实例体系”“维护治理规则”等核心需求
+   - 将 GUI 工作拆分为“适配方案定义”和“增量实现”两层优先级，避免范围失控
+
+2. **docs/阶段6-系统手册与维护/阶段6详细开发计划.md**
+   - 重写实施顺序，新增 6A“现状盘点与收口定稿”作为正式开工前的第一子阶段
+   - 将阶段6拆分为 6A 盘点、6B 手册与接入指南、6C 实例体系、6D GUI 与治理收口四个子阶段
+   - 明确工具盘点、实例盘点、GUI 差距表、文档角色矩阵等具体产物，而不是直接进入写文档或改界面
+   - 将“工具手册”“研究工作流手册”“实例体系说明”“维护规则文档”纳入明确交付物
+   - 收紧 GUI 修改范围为增量适配，不承诺推翻式重构
+   - 增加风险控制：防止只补文档、不做实例；防止把已存在能力误判为缺口；防止未经盘点就判定旧工具废弃
+
+**校对与验证**：
+
+1. 已按 `AGENTS.md` 要求使用 `Get-Date -Format yyyyMMdd-HHmmss` 获取真实时间戳 `20260517-122041`
+2. 已核对 `CHANGELOG.md` 当前最新条目为 `057-20260517-003449`，本次新增条目编号顺延为 `058`
+3. 已结合当前仓库现状完成交叉校对：
+   - `tools/` 当前真实清单为 16 个脚本
+   - 当前 GUI 已显示 yaw、pitch、u、v、backlog、obs_lag 等信息
+   - `app.py` 当前仅为薄入口，主逻辑位于 `simulation/cli.py` 与 `simulation/gui/window.py`
+   - 目标运动模型已处于 3D 状态，不应再按早期 2D 平台口径规划阶段6
+
+---
+
 ## 057-20260517-003449 阶段5复审优化与口径收紧
 
 **目的**：对阶段5交付物做二次复审，修正回归对比遗漏指标与 0 值丢失问题，收紧算法诊断对“预测行为”的表述口径，并优化对比图的可读性。

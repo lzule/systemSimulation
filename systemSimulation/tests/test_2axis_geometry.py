@@ -95,7 +95,7 @@ class TestDualAxisProjection(unittest.TestCase):
 
     def test_alpha_zero_beta_zero_center(self):
         """α=0, β=0 → u=cx, v=cy"""
-        _, in_fov, u, v = self.model.render_beacon_frame(0.0, 0.0, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(0.0, 0.0, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         self.assertAlmostEqual(u, self.cx, places=2)
         self.assertAlmostEqual(v, self.cy, places=2)
@@ -103,7 +103,7 @@ class TestDualAxisProjection(unittest.TestCase):
     def test_positive_beta_v_above_center(self):
         """β>0 → v < cy（目标在画面上方）"""
         beta = 0.05
-        _, in_fov, u, v = self.model.render_beacon_frame(0.0, beta, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(0.0, beta, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         expected_v = self.cy - self.f_px * math.tan(beta)
         self.assertAlmostEqual(v, expected_v, places=2)
@@ -112,7 +112,7 @@ class TestDualAxisProjection(unittest.TestCase):
     def test_negative_beta_v_below_center(self):
         """β<0 → v > cy（目标在画面下方）"""
         beta = -0.05
-        _, in_fov, u, v = self.model.render_beacon_frame(0.0, beta, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(0.0, beta, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         expected_v = self.cy - self.f_px * math.tan(beta)
         self.assertAlmostEqual(v, expected_v, places=2)
@@ -121,7 +121,7 @@ class TestDualAxisProjection(unittest.TestCase):
     def test_positive_alpha_u_right(self):
         """α>0 → u > cx（目标偏右）"""
         alpha = 0.05
-        _, in_fov, u, v = self.model.render_beacon_frame(alpha, 0.0, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(alpha, 0.0, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         expected_u = self.f_px * math.tan(alpha) + self.cx
         self.assertAlmostEqual(u, expected_u, places=2)
@@ -130,7 +130,7 @@ class TestDualAxisProjection(unittest.TestCase):
     def test_negative_alpha_u_left(self):
         """α<0 → u < cx（目标偏左）"""
         alpha = -0.05
-        _, in_fov, u, v = self.model.render_beacon_frame(alpha, 0.0, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(alpha, 0.0, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         expected_u = self.f_px * math.tan(alpha) + self.cx
         self.assertAlmostEqual(u, expected_u, places=2)
@@ -140,7 +140,7 @@ class TestDualAxisProjection(unittest.TestCase):
         """同时有 α 和 β 偏差时 u 和 v 都正确"""
         alpha = 0.03
         beta = 0.04
-        _, in_fov, u, v = self.model.render_beacon_frame(alpha, beta, self.f_mm, 0.0)
+        _, in_fov, u, v, *_ = self.model.render_beacon_frame(alpha, beta, self.f_mm, 0.0)
         self.assertTrue(in_fov)
         expected_u = self.f_px * math.tan(alpha) + self.cx
         expected_v = self.cy - self.f_px * math.tan(beta)
@@ -150,13 +150,13 @@ class TestDualAxisProjection(unittest.TestCase):
     def test_fov_vertical_inside(self):
         """β 在垂直 FOV 内时 in_fov=True"""
         fov_v_half = self.model.fov_v_half_rad(self.f_mm)
-        _, in_fov, _, _ = self.model.render_beacon_frame(0.0, fov_v_half * 0.5, self.f_mm, 0.0)
+        _, in_fov, _, _, *_ = self.model.render_beacon_frame(0.0, fov_v_half * 0.5, self.f_mm, 0.0)
         self.assertTrue(in_fov)
 
     def test_fov_vertical_outside(self):
         """β 超出垂直 FOV 时 in_fov=False"""
         fov_v_half = self.model.fov_v_half_rad(self.f_mm)
-        _, in_fov, _, _ = self.model.render_beacon_frame(0.0, fov_v_half * 2.0, self.f_mm, 0.0)
+        _, in_fov, _, _, *_ = self.model.render_beacon_frame(0.0, fov_v_half * 2.0, self.f_mm, 0.0)
         self.assertFalse(in_fov)
 
     def test_fov_both_axes_required(self):
@@ -164,10 +164,10 @@ class TestDualAxisProjection(unittest.TestCase):
         fov_h_half = self.model.fov_h_half_rad(self.f_mm)
         fov_v_half = self.model.fov_v_half_rad(self.f_mm)
         # 水平在、垂直不在
-        _, in_fov, _, _ = self.model.render_beacon_frame(0.0, fov_v_half * 2.0, self.f_mm, 0.0)
+        _, in_fov, _, _, *_ = self.model.render_beacon_frame(0.0, fov_v_half * 2.0, self.f_mm, 0.0)
         self.assertFalse(in_fov)
         # 垂直在、水平不在
-        _, in_fov, _, _ = self.model.render_beacon_frame(fov_h_half * 2.0, 0.0, self.f_mm, 0.0)
+        _, in_fov, _, _, *_ = self.model.render_beacon_frame(fov_h_half * 2.0, 0.0, self.f_mm, 0.0)
         self.assertFalse(in_fov)
 
     def test_fov_v_deg_property(self):

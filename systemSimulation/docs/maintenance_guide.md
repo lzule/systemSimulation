@@ -1,0 +1,156 @@
+# 维护规则
+
+> 本文档定义了后续维护者必须遵循的更新规则，防止平台再次回到"边做边散"的状态。
+
+---
+
+## 1. 维护检查清单
+
+每次改功能后，逐项核对：
+
+| 变更类型 | 必须同步 | 可选同步 |
+|---------|---------|---------|
+| 修改实体代码 | 对应实体 README、CHANGELOG | 系统主手册（如影响运行方式） |
+| 修改 GUI | CHANGELOG | 系统主手册截图 |
+| 新增工具 | tools_guide.md、CHANGELOG | README（如影响主流程） |
+| 新增算法 | 算法接入指南、CHANGELOG | examples_guide.md |
+| 新增运动模式 | scenarios_catalog.md、CHANGELOG | examples_guide.md |
+| 新增实例 | examples_guide.md | scenarios_catalog.md |
+| 修改配置参数 | config_editor 对应的 FIELD_META | 对应实体 README 参数表 |
+
+---
+
+## 2. 新增工具规则
+
+### 命名规范
+
+- 文件名使用小写+下划线：`my_tool.py`
+- 内部辅助工具以下划线开头：`_my_helper.py`
+- 放在 `tools/` 目录下
+
+### 必须补说明的位置
+
+1. `docs/tools_guide.md` — 新增工具章节（用途、命令、参数、输入输出、衔接）
+2. `CHANGELOG.md` — 追加修改记录
+3. 工具文件本身的 docstring — 至少写清用途和参数说明
+
+### 可选同步
+
+- 如果工具影响主流程入口（如新的运行方式），更新 `docs/system_manual.md`
+- 如果工具属于研究工作流的新环节，更新 `docs/research_workflow.md`
+
+---
+
+## 3. 新增算法规则
+
+### 目录组织
+
+```
+entities/raspi/trackers/     # 新 tracker
+entities/raspi/predictors/   # 新 predictor
+systemSimulation/             # 临时实验脚本
+```
+
+### 必须完成的步骤
+
+1. 在 `tools/run_benchmark.py` 的 `ALGORITHM_REGISTRY` 中注册
+2. 在 `ALGORITHM_VERSIONS` 中添加版本号
+3. 在 `ALGORITHM_OBS_MODES` 中声明支持的观测模式
+4. 更新 `docs/algorithm_integration_guide.md` 的"已有算法架构对比"表
+5. 更新 `docs/system_manual.md` 的"已注册算法"表
+6. 追加 `CHANGELOG.md` 记录
+
+### 可选同步
+
+- 在 `docs/examples_guide.md` 中添加使用该算法的实例
+- 在 `docs/scenarios_catalog.md` 中说明该算法适合验证什么
+
+---
+
+## 4. 新增场景模板规则
+
+### 命名和归档位置
+
+- 场景模板记录在 `docs/scenarios_catalog.md`
+- 实例记录在 `docs/examples_guide.md`
+- Benchmark 标准场景注册在 `tools/run_benchmark.py` 的 `SCENARIOS` 字典
+
+### 模板验收要求
+
+每个场景模板必须包含：
+- 场景目的（一句话）
+- 适合验证什么问题
+- 直接可运行的命令
+- 预期现象（定性描述）
+- 真实运行验证通过（不能只停留在文档层面）
+
+---
+
+## 5. 文档边界规则
+
+### README 只保留什么
+
+- 一句话说明（系统是什么）
+- 快速启动（1-3 条命令）
+- 文档导航（按角色/按任务）
+- 系统架构概要（30 行以内）
+- 开发约定（引用 CLAUDE.md）
+- 维护约定（引用本文档）
+
+**不放入 README 的内容**：详细运行方式、工具说明、控制程序开发教程、测试命令、目录结构。
+
+### 主手册 vs 专项手册
+
+| 文档 | 覆盖范围 | 深度 |
+|------|---------|------|
+| 系统主手册 | 面向所有用户的完整使用流程 | 中等（引用专项手册） |
+| 工具手册 | 16 个工具的详细说明 | 详细 |
+| 研究工作流手册 | benchmark → 出图完整链路 | 中等 |
+| 算法接入指南 | 4 种接入方式 | 详细（含代码示例） |
+| 树莓派控制程序开发手册 | 控制程序编写教程 | 最详细 |
+
+### 阶段文档 vs 主手册
+
+- **阶段文档**（`docs/阶段N-*`）：历史开发过程记录，包含当时的决策和上下文。不再主动维护。
+- **主手册和专项手册**：面向当前使用者的说明，反映平台当前能力。
+
+如果阶段文档中的内容与主手册冲突，以主手册为准。
+
+---
+
+## 6. GUI 修改后同步规则
+
+修改 `simulation/gui/window.py` 后：
+
+1. 必须运行冒烟测试：`conda run -n simulation python app.py --no-gui --mode offline --duration 1.0`
+2. 必须运行全量测试：`conda run -n simulation python -m unittest discover -s tests -v`
+3. 确认 headless 模式不受影响
+4. 更新 CHANGELOG
+
+可选同步：
+- 如果新增了显示字段，更新 `docs/system_manual.md` 的 GUI 描述
+- 如果修改了 CLI 参数，更新 `docs/system_manual.md` 的参数速查表
+
+---
+
+## 7. CHANGELOG 规则
+
+每次修改必须追加 CHANGELOG 记录，格式：
+
+```
+## 序号-时间戳 简要说明
+
+**目的**：修改原因
+**修改者**：Claude Code / Codex / 手工
+
+**修改内容**：
+1. 文件名 — 改了什么
+
+**验证**：如何验证
+```
+
+时间戳获取命令（PowerShell）：`Get-Date -Format yyyyMMdd-HHmmss`
+
+---
+
+*维护规则完毕。后续维护者请按此清单执行。*

@@ -1,0 +1,390 @@
+# 工具手册
+
+> 本手册覆盖 `tools/` 下全部 16 个工具的使用方法。
+> 按工作流组织的完整链路说明，请参见[研究工作流手册](research_workflow.md)。
+
+---
+
+## 工具分组概览
+
+| 分组 | 工具 | 用途 |
+|------|------|------|
+| 运行类 | `run_benchmark.py` | 多算法/多场景/多种子统一评测 |
+| 运行类 | `run_baseline.py` | 单基线实验（简化版 benchmark） |
+| 运行类 | `record_session.py` | 运行仿真并录制每 tick CSV |
+| 运行类 | `replay_session.py` | 用预录制 CSV 驱动控制程序 |
+| 汇总类 | `summarize_results.py` | 扫描实验输出，生成排名表 |
+| 对比类 | `compare_results.py` | 两组实验结果回归对比 |
+| 诊断类 | `diagnose_algorithm.py` | 4 维算法诊断 |
+| 诊断类 | `_analyze_tracking.py` | 简单跟踪分析（内部工具） |
+| 出图类 | `plot_comparison.py` | 跨算法跨场景对比图 |
+| 出图类 | `target_preview.py` | 目标轨迹 3D 预览 |
+| 调试类 | `pid_tuner.py` | PID 参数自动扫参 |
+| 调试类 | `tune_tracker_kp.py` | 跟踪器 Kp 扫参 |
+| 调试类 | `step_response.py` | 云台阶跃响应分析 GUI |
+| 调试类 | `config_editor.py` | 实体参数配置编辑器 GUI |
+| 调试类 | `camera_3d_viewer.py` | 相机针孔模型 3D 查看器 GUI |
+| 历史类 | `run_raspi_tracking_demo.py` | 早期 Raspi 联调示例 |
+
+---
+
+## 1. 运行类工具
+
+### 1.1 run_benchmark.py — 统一评测框架
+
+**用途**：对多个算法、多个场景、多个随机种子进行系统性评测，输出结构化实验数据。
+
+**什么时候用**：需要系统性地比较算法性能时。
+
+**典型命令**：
+```bash
+# 全量评测（6 算法 × 3 场景 × 5 种子）
+conda run -n simulation python tools/run_benchmark.py
+
+# 指定算法和场景
+conda run -n simulation python tools/run_benchmark.py --algorithms atp_search_track_baseline rate_pi --scenarios B1 B2
+
+# 指定种子和时长
+conda run -n simulation python tools/run_benchmark.py --seeds 42 123 --duration 10.0
+
+# 带实验备注（自动生成实验日志）
+conda run -n simulation python tools/run_benchmark.py --experiment-note "测试新 Kp 参数"
+```
+
+**参数**：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--algorithms` | str[] | 全部 | 算法列表 |
+| `--scenarios` | str[] | B1,B2,B3 | 场景列表 |
+| `--seeds` | int[] | 42,123,456,789,1024 | 随机种子 |
+| `--obs-modes` | str[] | research | 观测模式 |
+| `--duration` | float | 20.0 | 每次实验时长（秒） |
+| `--output-dir` | str | output/experiments | 输出目录 |
+| `--experiment-note` | str | 无 | 实验备注 |
+
+**输入**：无（使用内置场景和算法注册表）。
+
+**输出**：
+```
+output/experiments/{scenario}/{condition}/{algorithm}/seed_{n}/
+  ├── result.json        # 汇总指标
+  ├── metrics.csv        # 逐 tick 数据
+  ├── notes.md           # 实验元信息
+  ├── error_curve.png    # 误差曲线
+  └── state_timeline.png # ATP 状态时间线
+```
+
+**衔接**：输出可直接作为 `summarize_results.py`、`compare_results.py`、`diagnose_algorithm.py`、`plot_comparison.py` 的输入。
+
+**已注册算法**：`baseline_rate_p`、`atp_search_track_baseline`、`rate_pi`、`alpha_beta_tracker`、`linear_kf_tracker`、`angle_mode_realistic`
+
+**已注册场景**：
+
+| 场景 | 运动类型 | 初始距离 | 振幅 | 延时 | 说明 |
+|------|---------|---------|------|------|------|
+| B1 | sinusoidal | 100m | 15m | 0ms | 基线对照 |
+| B2 | sinusoidal | 100m | 15m | 26ms | 轻非理想 |
+| B3 | sinusoidal | 80m | 20m | 52ms | 中难度 |
+
+---
+
+### 1.2 run_baseline.py — 单基线实验
+
+**用途**：运行一次基线实验，输出 JSON 格式结果。功能已被 `run_benchmark.py` 覆盖，建议优先使用 benchmark。
+
+**什么时候用**：快速验证基线性能，不需要多算法对比。
+
+**典型命令**：
+```bash
+conda run -n simulation python tools/run_baseline.py
+conda run -n simulation python tools/run_baseline.py --duration 20 --seed 42
+```
+
+**输出**：`output/baseline_results.json`
+
+---
+
+### 1.3 record_session.py — 数据录制
+
+**用途**：运行仿真并导出每 tick 的 WorldSnapshot 为 CSV。
+
+**什么时候用**：需要逐 tick 数据做自定义分析或离线回放时。
+
+**典型命令**：
+```bash
+# 基础录制
+conda run -n simulation python -m tools.record_session --duration 10 --output output/record.csv
+
+# 带自定义控制程序和航点
+conda run -n simulation python -m tools.record_session --duration 20 --output output/record.csv \
+    --control-program my_tracker:MyTracker --waypoints "(100,0,20,2),(50,30,10,1)"
+```
+
+**参数**：`--duration`、`--output`、`--delay-ms`、`--control-program`、`--target-type`、`--waypoints`、`--obs-mode`
+
+**输出**：CSV 文件，每行一个 tick，含 target/gimbal/camera/raspi 全部字段。
+
+**衔接**：输出可直接作为 `replay_session.py` 的输入。
+
+---
+
+### 1.4 replay_session.py — 离线回放
+
+**用途**：用预录制 CSV 驱动控制程序，无需完整仿真。
+
+**什么时候用**：快速测试控制程序在不同场景数据上的表现。
+
+**限制**：CSV 无法存储图像帧数据，回放时 `obs["frame"]` 始终为 `None`。依赖帧数据（图像像素、检测结果）的控制程序无法通过此工具回放。仅使用角度、距离、像素坐标等数值型观测的控制程序可正常回放。
+
+**典型命令**：
+```bash
+# 统计模式（无控制程序）
+conda run -n simulation python -m tools.replay_session --input output/record.csv
+
+# 加载控制程序
+conda run -n simulation python -m tools.replay_session --input output/record.csv \
+    --control-program my_tracker:MyTracker
+
+# 输出回放结果
+conda run -n simulation python -m tools.replay_session --input output/record.csv \
+    --control-program my_tracker:MyTracker --output output/replay.csv
+```
+
+**输入**：`record_session.py` 输出的 CSV 文件。
+
+**输出**：可选 CSV + 控制台统计（total_rows, total_commands, avg_commands_per_tick）。
+
+---
+
+## 2. 汇总类工具
+
+### 2.1 summarize_results.py — 结果汇总
+
+**用途**：扫描实验输出目录，按算法/场景分组聚合，生成排名表。
+
+**什么时候用**：benchmark 完成后，需要快速查看各算法排名。
+
+**典型命令**：
+```bash
+conda run -n simulation python tools/summarize_results.py
+conda run -n simulation python tools/summarize_results.py --input-dir output/experiments
+conda run -n simulation python tools/summarize_results.py --sort-by rms_pixel_error --format json
+```
+
+**输入**：`output/experiments/` 下的 `result.json` 文件。
+
+**输出**：
+- `summary.csv` — 逐条实验（每行一个 seed × algorithm × scenario）
+- `summary_grouped.csv` — 按算法×场景分组的均值/标准差
+- `summary.json` — 结构化汇总
+- 控制台排名表
+
+**衔接**：输出作为 `compare_results.py` 和 `plot_comparison.py` 的输入。
+
+---
+
+## 3. 对比类工具
+
+### 3.1 compare_results.py — 回归对比
+
+**用途**：比较两组实验结果，识别提升项、退化项和超阈值报警。
+
+**什么时候用**：修改算法后，对比新旧版本性能差异。
+
+**典型命令**：
+```bash
+# 两个版本目录对比
+conda run -n simulation python tools/compare_results.py --baseline output/experiments --new output/experiments_v2
+
+# 同目录跨算法对比
+conda run -n simulation python tools/compare_results.py --baseline output/experiments --new output/experiments \
+    --baseline-algorithms atp_search_track_baseline --new-algorithms linear_kf_tracker
+
+# 指定阈值
+conda run -n simulation python tools/compare_results.py --baseline output/v1 --new output/v2 \
+    --rms-threshold 0.15 --capture-threshold 0.05
+```
+
+**参数**：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--baseline` | str | 必填 | 基线结果目录 |
+| `--new` | str | 必填 | 新结果目录 |
+| `--algorithms` | str[] | 全部 | 限定对比的算法 |
+| `--scenarios` | str[] | 全部 | 限定对比的场景 |
+| `--rms-threshold` | float | 0.10 | RMS 退化报警阈值（相对变化） |
+| `--capture-threshold` | float | 0.02 | 跟踪率退化报警阈值 |
+
+**输出**：`comparison.csv`、`comparison.json`、`comparison.md`
+
+**结果判定**：improved / regressed / regression_warning / neutral
+
+---
+
+## 4. 诊断类工具
+
+### 4.1 diagnose_algorithm.py — 算法诊断
+
+**用途**：从 4 个维度分析算法性能退化原因。
+
+**4 个诊断维度**：
+
+| 维度 | 分析内容 | 数据来源 |
+|------|---------|---------|
+| 误差分时段分解 | 按 ATP 状态分段统计误差 | metrics.csv: atp_state + pixel_error |
+| ATP 状态转换对比 | 状态转换次数、驻留时长 | metrics.csv: atp_state 逐 tick |
+| 控制行为对比 | 振荡检测、饱和检测 | metrics.csv: yaw/pitch_rate_cmd |
+| 预测代理分析 | 误差趋势推断预测效果 | metrics.csv: pixel_error 趋势 |
+
+**什么时候用**：对比发现退化后，需要定位退化原因。
+
+**典型命令**：
+```bash
+# 诊断特定算法在特定场景的表现
+conda run -n simulation python tools/diagnose_algorithm.py --algorithm linear_kf_tracker --scenario B3
+
+# 与基线算法对比诊断
+conda run -n simulation python tools/diagnose_algorithm.py --algorithm linear_kf_tracker \
+    --baseline-algorithm atp_search_track_baseline
+```
+
+**输出**：`diagnosis_{algorithm}.md`（可读报告）、`diagnosis_{algorithm}.json`（结构化数据）
+
+---
+
+### 4.2 _analyze_tracking.py — 简单跟踪分析（内部工具）
+
+**用途**：快速运行 20s 正弦仿真并打印摘要统计。
+
+**状态**：内部工具（下划线前缀），功能已被 `diagnose_algorithm.py` 覆盖。
+
+```bash
+conda run -n simulation python tools/_analyze_tracking.py
+```
+
+---
+
+## 5. 出图类工具
+
+### 5.1 plot_comparison.py — 对比可视化
+
+**用途**：生成跨算法、跨场景的研究对比图。
+
+**4 种图表类型**：
+
+| 图表 | 说明 | 数据来源 |
+|------|------|---------|
+| error overlay | 多算法误差曲线叠加 | metrics.csv |
+| rms heatmap | 算法×场景 RMS 热力图 | summary.json |
+| ranking bar | 多指标算法排名柱状图 | summary_grouped.csv |
+| phase boxplot | 按 ATP 状态分段的误差箱线图 | metrics.csv |
+
+**典型命令**：
+```bash
+# 生成全部图表
+conda run -n simulation python tools/plot_comparison.py
+
+# 仅生成热力图和排名图
+conda run -n simulation python tools/plot_comparison.py --plots heatmap ranking
+
+# 指定场景和基线算法
+conda run -n simulation python tools/plot_comparison.py --scenarios B1 B2 \
+    --baseline-algorithm atp_search_track_baseline
+```
+
+**输出**：PNG 文件到 `output/experiments/plots/` 或 `--output-dir` 指定目录。
+
+---
+
+### 5.2 target_preview.py — 目标轨迹预览
+
+**用途**：独立预览目标运动轨迹（3D 世界坐标）。
+
+**典型命令**：
+```bash
+conda run -n simulation python tools/target_preview.py                  # 交互式
+conda run -n simulation python tools/target_preview.py --save-gif       # 保存 GIF
+conda run -n simulation python tools/target_preview.py --no-display     # 无头模式
+```
+
+---
+
+## 6. 调试类工具
+
+### 6.1 pid_tuner.py — PID 参数扫参
+
+**用途**：自动运行多组 PID 候选参数，对比像素误差、角度误差、建立时间。
+
+```bash
+conda run -n simulation python tools/pid_tuner.py
+conda run -n simulation python tools/pid_tuner.py --duration 20 --stable-from 5
+```
+
+**输出**：`output/pid_tuner.png`（3 行 2 列图 + 指标表）
+
+---
+
+### 6.2 tune_tracker_kp.py — 跟踪器 Kp 扫参
+
+**用途**：扫描 Kp 值范围，找到最优角度 RMS。
+
+```bash
+conda run -n simulation python tools/tune_tracker_kp.py
+conda run -n simulation python tools/tune_tracker_kp.py --kp-min 0.02 --kp-max 0.20 --kp-step 0.01
+```
+
+**输出**：控制台排名表（无文件输出）。
+
+---
+
+### 6.3 step_response.py — 云台阶跃响应
+
+**用途**：PyQt5 GUI，实时注入 yaw/pitch 命令，计算阶跃响应指标。
+
+```bash
+conda run -n simulation python tools/step_response.py
+```
+
+**输出**：GUI 交互（无文件输出）。每条命令计算延迟、上升时间、建立时间、超调、稳态误差。
+
+---
+
+### 6.4 config_editor.py — 参数配置编辑器
+
+**用途**：PyQt5 GUI，卡片式编辑 `config.py` 中所有实体参数。
+
+```bash
+conda run -n simulation python tools/config_editor.py
+```
+
+---
+
+### 6.5 camera_3d_viewer.py — 相机模型查看器
+
+**用途**：PyQt5 GUI，交互式查看相机针孔投影模型。
+
+```bash
+conda run -n simulation python tools/camera_3d_viewer.py
+```
+
+可调焦距、目标距离和位置，实时观察 3D 场景和 2D 传感器投影。
+
+---
+
+## 7. 历史兼容工具
+
+### 7.1 run_raspi_tracking_demo.py — 早期联调示例
+
+**用途**：Raspi 控制器联调演示（上电+加载基线+采集指标）。功能已被 `run_benchmark.py` 覆盖。
+
+**状态**：早期演示脚本，不推荐日常使用。
+
+```bash
+conda run -n simulation python tools/run_raspi_tracking_demo.py --duration 8 --mode offline
+```
+
+---
+
+*工具手册完毕。如需按工作流顺序使用这些工具，请参见[研究工作流手册](research_workflow.md)。*

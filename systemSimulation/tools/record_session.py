@@ -54,7 +54,7 @@ def record_session(duration_s: float, output_path: str,
     if cfg.control_program_path:
         control_program = load_control_program_from_path(cfg.control_program_path)
 
-    runtime = build_runtime(delay_ms=cfg.delay_ms, control_program=control_program)
+    runtime = build_runtime(delay_ms=cfg.delay_ms, control_program=control_program, obs_mode=cfg.obs_mode)
     n_steps = max(1, int(duration_s / runtime.dt_s))
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
