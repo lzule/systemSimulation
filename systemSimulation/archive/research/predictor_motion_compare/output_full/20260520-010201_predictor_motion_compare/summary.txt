@@ -1,0 +1,27 @@
+predictor motion compare summary
+
+output: systemSimulation\research\predictor_motion_compare\output_full\20260520-010201_predictor_motion_compare
+duration: 12.0s
+delay: 26.0ms
+obs_mode: realistic
+zoom_seconds: 3.0
+
+note: mid3s is the main visual check; overview is for context.
+
+[sinusoidal] Sinusoidal motion
+  no_prediction: mid3s_truth_err_mean_abs=0.2256, truth_err_mean_abs=0.3720, detected_rate=1.000
+  kalman: mid3s_truth_err_mean_abs=3.5799, truth_err_mean_abs=3.5680, detected_rate=1.000
+  sine_decomp: mid3s_truth_err_mean_abs=14.9771, truth_err_mean_abs=10.8479, detected_rate=0.597
+  best=no_prediction
+
+[constant_velocity] Constant velocity motion
+  no_prediction: mid3s_truth_err_mean_abs=0.0638, truth_err_mean_abs=0.1596, detected_rate=1.000
+  kalman: mid3s_truth_err_mean_abs=3.6326, truth_err_mean_abs=3.5434, detected_rate=1.000
+  sine_decomp: mid3s_truth_err_mean_abs=17.8631, truth_err_mean_abs=14.9627, detected_rate=0.317
+  best=no_prediction
+
+[constant_accel] Constant acceleration motion
+  no_prediction: mid3s_truth_err_mean_abs=0.0654, truth_err_mean_abs=0.1942, detected_rate=1.000
+  kalman: mid3s_truth_err_mean_abs=3.5818, truth_err_mean_abs=3.5628, detected_rate=1.000
+  sine_decomp: mid3s_truth_err_mean_abs=11.3140, truth_err_mean_abs=12.6328, detected_rate=0.480
+  best=no_prediction

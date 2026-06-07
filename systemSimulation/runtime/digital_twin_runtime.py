@@ -1,11 +1,14 @@
 ﻿from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from config import scene_cfg
+
+_logger = logging.getLogger(__name__)
 from entities.camera.entity import CameraEntity
 from entities.camera.client import CameraClient
 from entities.gimbal.entity import GimbalEntity
@@ -98,7 +101,12 @@ class DigitalTwinRuntime:
         due: List[_ScheduledCommand] = [c for c in self._pending_commands if c.apply_at <= self._time]
         self._pending_commands = [c for c in self._pending_commands if c.apply_at > self._time]
         for item in due:
-            self._dispatch(item.command)
+            result = self._dispatch(item.command)
+            if not result.accepted:
+                _logger.debug(
+                    "命令被拒绝: %s.%s -> %s (%s)",
+                    item.command.target, item.command.action, result.code, result.message
+                )
 
     def step(self, n: int = 1) -> WorldSnapshot:
         with self._lock:

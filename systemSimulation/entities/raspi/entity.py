@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import copy
 import random
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
@@ -19,14 +20,14 @@ class RaspiState:
     last_process_latency_s: float
     last_command_apply_timestamp: float
     delay_metrics: Dict[str, float]
-    atp_state: str
     control_program_name: str
 
 
 class RaspiEntity:
     def __init__(self, cfg: RaspiConfig | None = None, delay_cfg: RaspiDelayConfig | None = None):
         self.cfg = cfg or raspi_cfg
-        self.delay_cfg = delay_cfg or raspi_delay_cfg
+        # 深拷贝，避免 set_delay_profile() 通过 setattr 污染全局单例配置
+        self.delay_cfg = copy.deepcopy(delay_cfg or raspi_delay_cfg)
 
         self.power_state = POWER_OFF
         self.boot_remaining_s = 0.0
@@ -50,7 +51,6 @@ class RaspiEntity:
             last_process_latency_s=0.0,
             last_command_apply_timestamp=float("nan"),
             delay_metrics={},
-            atp_state="",
             control_program_name=type(self.control_program).__name__,
         )
 
@@ -119,13 +119,6 @@ class RaspiEntity:
         submit_cmd: Callable[[Command, float], None],
         runtime_dt: float,
     ) -> RaspiState:
-        sm = getattr(self.control_program, "state_machine", None)
-        atp_state = ""
-        if sm is not None:
-            current_state = getattr(sm, "state", None)
-            if current_state is not None:
-                atp_state = str(current_state.value) if hasattr(current_state, "value") else str(current_state)
-
         if self.power_state == POWER_BOOTING:
             self.boot_remaining_s -= runtime_dt
             if self.boot_remaining_s <= 0.0:
@@ -174,7 +167,6 @@ class RaspiEntity:
                 "queue_capacity": int(self.delay_cfg.queue_capacity),
                 "control_rate_hz": float(self.delay_cfg.control_rate_hz),
             },
-            atp_state=atp_state,
             control_program_name=type(self.control_program).__name__,
         )
         return self._last_state
@@ -189,7 +181,6 @@ class RaspiEntity:
             "last_process_latency_s": s.last_process_latency_s,
             "last_command_apply_timestamp": s.last_command_apply_timestamp,
             "delay_metrics": dict(s.delay_metrics),
-            "atp_state": s.atp_state,
             "control_program_name": s.control_program_name,
         }
         return result

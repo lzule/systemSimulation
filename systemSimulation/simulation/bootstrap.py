@@ -51,7 +51,14 @@ def start_stack(
     runtime.camera_client.power_on()
     runtime.raspi_client.power_on()
 
-    for _ in range(3200):
+    # 等待上限：取最长启动延时的 3 倍余量，避免硬编码魔法数字
+    from config import gimbal_cfg as _gcfg, camera_cfg as _ccfg, raspi_cfg as _rcfg, scene_cfg as _scfg
+    _max_boot_steps = int(
+        max(_gcfg.boot_delay_s, _ccfg.boot_delay_s, _rcfg.boot_delay_s) * 3.0
+        / _scfg.dt_s
+    ) + 10
+
+    for _ in range(_max_boot_steps):
         snap = runtime.step(1)
         if (
             snap.gimbal["power_state"] == "READY"

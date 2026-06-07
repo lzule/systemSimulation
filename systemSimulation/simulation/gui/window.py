@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from config import gimbal_cfg, raspi_delay_cfg, scene_cfg
+from config import camera_cfg, gimbal_cfg, raspi_delay_cfg, scene_cfg
 from simulation.bootstrap import build_runtime, load_control_program_from_path
 from simulation.headless import apply_target_overrides
 from simulation.gui.panels import CameraPanel, WorldView
@@ -129,7 +129,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.summary_labels: dict[str, QtWidgets.QLabel] = {}
         for key, default in [
             ("state", "已暂停"), ("t", "0.00s"), ("distance", "距离: --"),
-            ("atp_state", "--"),
             ("control_program", "--"), ("obs_mode", str(self.cfg.obs_mode)),
             ("target_type", str(self.cfg.target_type) if self.cfg.target_type else self._get_target_motion_type()),
             ("delay", f"{self.cfg.delay_ms:.0f}ms"), ("backlog", "0"),
@@ -179,10 +178,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         toolbar_layout.addWidget(QtWidgets.QLabel("算法:"))
         self.combo_algorithm = QtWidgets.QComboBox()
         self.combo_algorithm.setStyleSheet(combo_style)
-        _algo_keys = [
-            "baseline_rate_p", "rate_pi", "alpha_beta_tracker",
-            "linear_kf_tracker", "atp_search_track_baseline", "angle_mode_realistic",
-        ]
+        _algo_keys = ["baseline_rate_p"]
         for k in _algo_keys:
             self.combo_algorithm.addItem(k, k)
         toolbar_layout.addWidget(self.combo_algorithm)
@@ -245,6 +241,11 @@ class DashboardWindow(QtWidgets.QMainWindow):
         world_layout.setContentsMargins(8, 8, 8, 8)
         self.world_view = WorldView()
         world_layout.addWidget(self.world_view)
+        self.world_info_label = QtWidgets.QLabel("")
+        self.world_info_label.setStyleSheet(
+            f"color: {COLOR['ok']}; font-size: 9pt; font-family: 'Microsoft YaHei UI';"
+        )
+        world_layout.addWidget(self.world_info_label)
         left_layout.addWidget(world_box, 6)
 
         timeline_box = QtWidgets.QGroupBox("底部时间轴（误差 / 角速度）")
@@ -406,11 +407,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.world_fov_arc.setPen(QtGui.QPen(QtGui.QColor(COLOR["fov"]), 1.2))
         scene.addItem(self.world_fov_arc)
 
-        self.world_title = QtWidgets.QGraphicsSimpleTextItem("")
-        self.world_title.setBrush(QtGui.QBrush(QtGui.QColor(COLOR["text_main"])))
-        self.world_title.setFont(QtGui.QFont("Microsoft YaHei UI", 9))
-        self.world_title.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
-        scene.addItem(self.world_title)
 
     def _build_timeline(self) -> None:
         if pg is None or self.timeline_container is None:
@@ -481,15 +477,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         # X 轴联动
         self.plot_rate.setXLink(self.plot_err)
 
-        # ATP 状态背景色区域列表（叠加在 plot_rate 上）
-        self.atp_regions: list = []
-        self._last_atp_state_drawn: str = ""
-
-        # 当前 ATP 状态标签（显示在时间轴 GroupBox 标题旁）
-        self.lbl_current_atp = QtWidgets.QLabel("ATP: --")
-        self.lbl_current_atp.setStyleSheet(f"color: {COLOR['text_sub']}; font-size: 9pt; font-weight: 700;")
-        vbox.addWidget(self.lbl_current_atp)
-
         vbox.addWidget(self.timeline_gw)
 
     def _set_runtime_state(self, text: str, running: bool) -> None:
@@ -529,6 +516,10 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.worker.set_paused(True)
         self.worker.stop()
         self.worker.wait(2000)
+        if self.worker.isRunning():
+            # 旧线程未能在超时内退出，跳过本次 reset 避免脏数据
+            self.statusBar().showMessage("重置失败：旧仿真线程未退出，请稍后重试", 3000)
+            return
 
         cp = self._build_control_program()
         apply_target_overrides(self.cfg)
@@ -556,14 +547,13 @@ class DashboardWindow(QtWidgets.QMainWindow):
         snap, frame = self.state_buf.read_latest()
         summary = {
             "timestamp": ts,
-            "control_program": self.cfg.control_program_path or "BaselineTrackerProgram",
+            "control_program": self._algo_key_override or self.cfg.control_program_path or "BaselineTrackerProgram",
             "obs_mode": self.cfg.obs_mode,
             "target_type": self.cfg.target_type or self._get_target_motion_type(),
             "delay_ms": float(self.delay_spin.value()),
         }
         if snap is not None:
             summary["sim_time"] = snap.timestamp
-            summary["atp_state"] = str(snap.raspi.get("atp_state", ""))
             summary["in_fov"] = bool(snap.camera.get("in_fov", False))
             summary["backlog"] = snap.raspi.get("pipeline_backlog_len", 0)
 
@@ -582,11 +572,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(
             f"已切换: 算法={self._algo_key_override}  观测={self.cfg.obs_mode}  目标={self.cfg.target_type}", 2000
         )
-
-    def _on_apply_delay(self) -> None:
-        delay_ms = float(self.delay_spin.value())
-        self.worker.request_delay_ms(delay_ms)
-        self.statusBar().showMessage(f"{UI_TEXT['apply_delay_done']}: {delay_ms:.1f} ms", 2000)
 
     def _on_worker_error(self, err: str) -> None:
         QtWidgets.QMessageBox.critical(self, UI_TEXT["thread_error"], err)
@@ -618,11 +603,9 @@ class DashboardWindow(QtWidgets.QMainWindow):
             "target_type": self.cfg.target_type or self._get_target_motion_type(),
             "delay_ms": float(self.delay_spin.value()),
             "total_frames": len(metrics_log),
-            "atp_events": len(event_log),
         }
         if snap is not None:
             summary["sim_time"] = snap.timestamp
-            summary["atp_state"] = str(snap.raspi.get("atp_state", ""))
             summary["in_fov"] = bool(snap.camera.get("in_fov", False))
         with open(os.path.join(out_dir, "summary.json"), "w", encoding="utf-8") as f:
             _json.dump(summary, f, indent=2, ensure_ascii=False)
@@ -635,11 +618,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
                 writer.writeheader()
                 writer.writerows(metrics_log)
 
-        # 4. ATP 状态变迁事件
-        with open(os.path.join(out_dir, "event_log.json"), "w", encoding="utf-8") as f:
-            _json.dump(event_log, f, indent=2, ensure_ascii=False)
-
-        # 5. 场景配置快照
+        # 4. 场景配置快照
         from config import (camera_cfg, gimbal_cfg as gcfg, target_cfg,
                             raspi_delay_cfg as rdcfg, obs_cfg)
         import dataclasses
@@ -709,7 +688,7 @@ class DashboardWindow(QtWidgets.QMainWindow):
         self.world_gimbal_line.setLine(0.0, 0.0, gx, gy)
 
         f_mm = float(snapshot.camera["f_current_mm"])
-        sensor_w_mm = 4.8
+        sensor_w_mm = camera_cfg.sensor_w_mm  # 从配置读取，避免硬编码
         fov_h_deg = 2.0 * math.degrees(math.atan(sensor_w_mm / (2.0 * max(1e-6, f_mm))))
         ang_l = math.radians(yaw_deg - fov_h_deg / 2.0)
         ang_r = math.radians(yaw_deg + fov_h_deg / 2.0)
@@ -732,15 +711,16 @@ class DashboardWindow(QtWidgets.QMainWindow):
             f"角度误差={angle_err:.2f}°  z={z_m:.1f}m  {'在视野内' if in_fov else '视野外'}"
             f"  [俯视图 - z编码: 高=蓝，低=黄]"
         )
-        self.world_title.setText(msg)
-        self.world_title.setBrush(QtGui.QBrush(QtGui.QColor(COLOR["ok"] if in_fov else COLOR["warn"])))
-        scene_rect = self.world_view.sceneRect()
-        self.world_title.setPos(scene_rect.left() + 6.0, scene_rect.top() + 6.0)
+        color = COLOR["ok"] if in_fov else COLOR["warn"]
+        self.world_info_label.setText(msg)
+        self.world_info_label.setStyleSheet(
+            f"color: {color}; font-size: 9pt; font-family: 'Microsoft YaHei UI';"
+        )
 
         lim = max(50.0, abs(x_m) + 12.0, abs(y_m) + 12.0, line_len * 0.9)
         self.world_view.ensure_range(lim)
 
-    def _draw_timeline(self, t_list: list[float], err_list: list[float], rate_list: list[float], angle_err_list: list[float], atp_state_list: list[str]) -> None:
+    def _draw_timeline(self, t_list: list[float], err_list: list[float], rate_list: list[float], angle_err_list: list[float]) -> None:
         if pg is None or self.timeline_container is None:
             return
         if not t_list:
@@ -758,7 +738,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         err_np = err_np[mask]
         rate_np = rate_np[mask]
         angle_np = angle_np[mask]
-        atp_windowed = [atp_state_list[i] for i in range(len(mask)) if mask[i]]
         if len(t_np) == 0:
             return
 
@@ -793,48 +772,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
             r_pad = max(3.0, 0.12 * max(1.0, r_max - r_min))
             self.plot_rate.vb.setYRange(r_min - r_pad, r_max + r_pad, padding=0.0)
         self.plot_rate.vb.setXRange(t_min, t_max + 0.01, padding=0.0)
-
-        # ── ATP 状态背景色（LinearRegionItem 叠加在 plot_rate 上）──
-        atp_colors = {
-            "SEARCH": "#e74c3c", "ACQUIRE": "#f39c12",
-            "TRACK_COARSE": "#3498db", "TRACK_FINE": "#27ae60",
-            "LOST": "#e74c3c", "REACQUIRE": "#f39c12",
-        }
-        # 清除旧区域
-        for region in self.atp_regions:
-            self.plot_rate.removeItem(region)
-        self.atp_regions.clear()
-
-        if atp_windowed and len(t_np) > 0:
-            # 扫描连续状态段
-            seg_start = 0
-            for i in range(1, len(atp_windowed) + 1):
-                cur = atp_windowed[i - 1]
-                nxt = atp_windowed[i] if i < len(atp_windowed) else None
-                if nxt != cur:
-                    if cur and cur in atp_colors:
-                        x0 = float(t_np[seg_start])
-                        x1 = float(t_np[i - 1])
-                        color = QtGui.QColor(atp_colors[cur])
-                        color.setAlpha(40)
-                        region = pg.LinearRegionItem(
-                            values=(x0, x1),
-                            orientation="vertical",
-                            brush=pg.mkBrush(color),
-                            pen=pg.mkPen(None),
-                            movable=False,
-                        )
-                        self.plot_rate.addItem(region)
-                        self.atp_regions.append(region)
-                    seg_start = i
-
-            # 更新当前 ATP 状态标签
-            last_state = atp_windowed[-1] if atp_windowed else ""
-            atp_color = atp_colors.get(last_state, COLOR["text_sub"])
-            self.lbl_current_atp.setText(f"ATP: {last_state or '--'}")
-            self.lbl_current_atp.setStyleSheet(
-                f"color: {atp_color}; font-size: 9pt; font-weight: 700;"
-            )
 
     @staticmethod
     def _camera_info_text(frame: Optional[FrameSample], u_px: float, v_px: float, in_fov: bool) -> tuple[str, bool]:
@@ -884,11 +821,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
         c = snapshot.camera
         self.summary_labels["t"].setText(f"{snapshot.timestamp:.2f}s")
         self.summary_labels["distance"].setText(f"距离: {float(c.get('distance_m', 0.0)):.1f}m")
-        atp = str(r.get("atp_state", "--")) or "--"
-        atp_colors = {"SEARCH": "#e74c3c", "ACQUIRE": "#f39c12", "TRACK_COARSE": "#3498db", "TRACK_FINE": "#27ae60", "LOST": "#e74c3c", "REACQUIRE": "#f39c12"}
-        atp_color = atp_colors.get(atp, COLOR["text_sub"])
-        self.summary_labels["atp_state"].setText(f"ATP: {atp}")
-        self.summary_labels["atp_state"].setStyleSheet(f"color: {atp_color}; font-weight: 700; font-size: 10pt;")
         self.summary_labels["control_program"].setText(f"算法: {r.get('control_program_name', '--')}")
         self.summary_labels["delay"].setText(f"延时: {r.get('last_process_latency_s', 0)*1000:.1f}ms")
         self.summary_labels["backlog"].setText(f"backlog: {r.get('pipeline_backlog_len', 0)}")
@@ -944,7 +876,6 @@ class DashboardWindow(QtWidgets.QMainWindow):
             ("Raspi帧时间戳", f"{raspi_ts:.3f} s"),
         ]
         raspi_items: list[tuple[str, str]] = [
-            ("ATP 状态", str(r.get("atp_state", "--"))),
             ("控制程序", str(r.get("control_program_name", "--"))),
             ("观测时间戳", f"{float(r.get('effective_obs_timestamp', float('nan'))):.3f} s"),
             ("管线积压", f"{r['pipeline_backlog_len']}"),
@@ -993,14 +924,14 @@ class DashboardWindow(QtWidgets.QMainWindow):
             self.lbl_fps_summary.setText(f"FPS: {self._fps_value:.1f}")
 
     def _render_tick(self) -> None:
-        snapshot, raw_frame = self.state_buf.read_latest()
+        # 原子读取：单次加锁获取 snapshot、frame 和曲线，避免跨 tick 混读
+        snapshot, raw_frame, t_list, x_hist, y_hist, err_list, rate_list, angle_err_list = self.state_buf.read_all()
         if snapshot is None:
             self._update_fps_label()
             return
 
-        t_list, x_hist, y_hist, err_list, rate_list, angle_err_list, atp_state_list = self.state_buf.read_curves()
         self._draw_world(snapshot, x_hist, y_hist)
-        self._draw_timeline(t_list, err_list, rate_list, angle_err_list, atp_state_list)
+        self._draw_timeline(t_list, err_list, rate_list, angle_err_list)
 
         self.raw_panel.view.update_frame(raw_frame)
         u_px = float(snapshot.camera.get("u_px", float("nan")))

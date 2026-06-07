@@ -104,122 +104,19 @@ def _create_baseline_rate_p():
     return BaselineTrackerProgram()
 
 
-def _create_atp_search_track_baseline():
-    """创建 ATP 状态机 + 速率P跟踪（AtpControlProgram + RatePTracker）。"""
-    from entities.raspi.atp_control_program import AtpControlProgram
-    from entities.raspi.trackers.rate_p_tracker import RatePTracker
-    return AtpControlProgram(tracker=RatePTracker())
-
-
-def _create_rate_pi():
-    """创建速率PI控制器（AtpControlProgram + RatePITracker）。
-
-    RatePITracker 尚未由 Agent 2 实现时，退化为 RatePTracker。
-    """
-    try:
-        from entities.raspi.atp_control_program import AtpControlProgram
-        from entities.raspi.trackers.rate_pi_tracker import RatePITracker
-        return AtpControlProgram(tracker=RatePITracker())
-    except ImportError:
-        # Agent 2 尚未实现，退化
-        print("  [警告] RatePITracker 尚未实现，退化为 RatePTracker")
-        return _create_atp_search_track_baseline()
-
-
-def _create_alpha_beta_tracker():
-    """创建 Alpha-Beta 预测器 + 速率P跟踪器。"""
-    try:
-        from entities.raspi.atp_control_program import AtpControlProgram
-        from entities.raspi.trackers.rate_p_tracker import RatePTracker
-        from entities.raspi.predictors.alpha_beta import AlphaBetaFilter
-        return AtpControlProgram(tracker=RatePTracker(), predictor=AlphaBetaFilter())
-    except ImportError:
-        print("  [警告] AlphaBetaFilter 不可用，退化为 atp_search_track_baseline")
-        return _create_atp_search_track_baseline()
-
-
-def _create_linear_kf_tracker():
-    """创建线性卡尔曼滤波预测器 + 速率P跟踪器。
-
-    LinearKF 尚未由 Agent 3 实现时，退化为 Alpha-Beta。
-    """
-    try:
-        from entities.raspi.atp_control_program import AtpControlProgram
-        from entities.raspi.trackers.rate_p_tracker import RatePTracker
-        from entities.raspi.predictors.linear_kf import LinearKF
-        return AtpControlProgram(tracker=RatePTracker(), predictor=LinearKF())
-    except ImportError:
-        print("  [警告] LinearKF 尚未实现，退化为 AlphaBeta")
-        return _create_alpha_beta_tracker()
-
-
-class AngleModeControlProgram:
-    """AngleModeTracker 的 ControlProgram 包装。
-
-    AngleModeTracker 实现的是 Tracker 协议（compute_commands），
-    不能直接通过 AtpControlProgram 使用（因为 ATP 强制 RATE_MODE）。
-    本包装类直接实现 on_tick 协议，内部调用 AngleModeTracker。
-    仅适用于 realistic/debug 模式。
-    """
-
-    def __init__(self):
-        from entities.raspi.trackers.angle_mode_tracker import AngleModeTracker
-        self._tracker = AngleModeTracker()
-        self.last_detection_found: bool = False
-        self.last_yaw_rate_cmd_dps: float = 0.0
-        self.last_pitch_rate_cmd_dps: float = 0.0
-
-    def on_tick(self, obs: dict) -> list:
-        from entities.raspi.atp_state_machine import AtpState
-        commands = self._tracker.compute_commands(obs, AtpState.TRACK_COARSE, None)
-        self.last_detection_found = self._tracker.last_detection_found
-        # angle mode 没有速率命令，记录角度命令对应的等效速率供采集
-        for cmd in reversed(commands):
-            if cmd.action == "set_angle_target" and cmd.payload:
-                # 标记为特殊值以便区分
-                self.last_yaw_rate_cmd_dps = float("nan")
-                self.last_pitch_rate_cmd_dps = float("nan")
-                break
-        return commands
-
-
-def _create_angle_mode_realistic():
-    """创建角度模式控制器（仅 realistic/debug 模式可用）。"""
-    try:
-        return AngleModeControlProgram()
-    except ImportError:
-        print("  [警告] AngleModeTracker 不可用，退化为 baseline_rate_p")
-        return _create_baseline_rate_p()
-
-
 # 算法注册表：名称 -> 工厂函数
 ALGORITHM_REGISTRY: dict[str, Callable[[], Any]] = {
     "baseline_rate_p": _create_baseline_rate_p,
-    "rate_pi": _create_rate_pi,
-    "alpha_beta_tracker": _create_alpha_beta_tracker,
-    "linear_kf_tracker": _create_linear_kf_tracker,
-    "atp_search_track_baseline": _create_atp_search_track_baseline,
-    "angle_mode_realistic": _create_angle_mode_realistic,
 }
 
 # 算法版本号（手动维护）
 ALGORITHM_VERSIONS: dict[str, str] = {
     "baseline_rate_p": "1.0",
-    "rate_pi": "1.0",
-    "alpha_beta_tracker": "1.0",
-    "linear_kf_tracker": "1.0",
-    "atp_search_track_baseline": "1.0",
-    "angle_mode_realistic": "1.0",
 }
 
 # 算法适用的观测模式（用于参数校验提示）
 ALGORITHM_OBS_MODES: dict[str, list[str]] = {
     "baseline_rate_p": ["research", "realistic", "debug"],
-    "rate_pi": ["research", "realistic", "debug"],
-    "alpha_beta_tracker": ["research", "realistic", "debug"],
-    "linear_kf_tracker": ["research", "realistic", "debug"],
-    "atp_search_track_baseline": ["research", "realistic", "debug"],
-    "angle_mode_realistic": ["realistic", "debug"],
 }
 
 
@@ -243,7 +140,6 @@ class FrameRecord:
     pixel_error_y: float
     pixel_error_total: float
     detection_found: bool
-    atp_state: str
     yaw_rate_cmd: float
     pitch_rate_cmd: float
     in_fov: bool
@@ -292,7 +188,6 @@ class FrameCollector:
         detection_found = False
         yaw_rate_cmd = 0.0
         pitch_rate_cmd = 0.0
-        atp_state = "N/A"
 
         if hasattr(control_program, "last_detection_found"):
             detection_found = control_program.last_detection_found
@@ -300,10 +195,6 @@ class FrameCollector:
             yaw_rate_cmd = control_program.last_yaw_rate_cmd_dps
         if hasattr(control_program, "last_pitch_rate_cmd_dps"):
             pitch_rate_cmd = control_program.last_pitch_rate_cmd_dps
-        if hasattr(control_program, "state_machine"):
-            atp_state = str(control_program.state_machine.state.value)
-        elif hasattr(control_program, "tracker") and hasattr(control_program.tracker, "last_detection_found"):
-            detection_found = control_program.tracker.last_detection_found
 
         self.records.append(FrameRecord(
             timestamp=float(snapshot.timestamp),
@@ -311,7 +202,6 @@ class FrameCollector:
             pixel_error_y=pixel_error_y,
             pixel_error_total=pixel_error_total,
             detection_found=detection_found,
-            atp_state=atp_state,
             yaw_rate_cmd=yaw_rate_cmd,
             pitch_rate_cmd=pitch_rate_cmd,
             in_fov=in_fov,
@@ -327,20 +217,9 @@ class FrameCollector:
 # ============================================================
 
 def compute_metrics(records: list[FrameRecord], duration_s: float) -> dict:
-    """从帧级数据计算汇总指标。
-
-    Args:
-        records: 帧级数据列表。
-        duration_s: 仿真总时长。
-
-    Returns:
-        指标字典，包含 metrics 和 atp_metrics。
-    """
+    """从帧级数据计算汇总指标。"""
     if not records:
-        return {
-            "metrics": _empty_metrics(),
-            "atp_metrics": _empty_atp_metrics(),
-        }
+        return {"metrics": _empty_metrics()}
 
     n_total = len(records)
     timestamps = np.array([r.timestamp for r in records])
@@ -377,9 +256,6 @@ def compute_metrics(records: list[FrameRecord], duration_s: float) -> dict:
             lock_loss_count += 1
             was_tracking = False
 
-    # ATP 状态序列（供重捕获指标使用）
-    atp_states = [r.atp_state for r in records]
-
     # 丢锁率：丢锁次数 / 仿真时长
     lock_loss_rate = lock_loss_count / max(duration_s, 1e-6)
 
@@ -403,25 +279,6 @@ def compute_metrics(records: list[FrameRecord], duration_s: float) -> dict:
     else:
         tracking_efficiency = 0.0
 
-    # 重捕获时间：LOST/REACQUIRE→ACQUIRE/TRACK 的平均耗时
-    reacquire_times = []
-    reacquire_attempts = 0
-    reacquire_successes = 0
-    reacquire_start = None
-    for i in range(n_total):
-        if timestamps[i] < 3.0:
-            continue
-        s = atp_states[i] if i < len(atp_states) else "N/A"
-        if s in ("LOST", "REACQUIRE") and reacquire_start is None:
-            reacquire_start = timestamps[i]
-            reacquire_attempts += 1
-        elif s in ("ACQUIRE", "TRACK_COARSE", "TRACK_FINE") and reacquire_start is not None:
-            reacquire_times.append(timestamps[i] - reacquire_start)
-            reacquire_successes += 1
-            reacquire_start = None
-    reacquire_time_s = float(np.mean(reacquire_times)) if reacquire_times else float("nan")
-    reacquire_success_rate = reacquire_successes / max(reacquire_attempts, 1)
-
     metrics = {
         "capture_success_rate": round(capture_success_rate, 4),
         "mean_tracking_error_px": round(mean_tracking_error_px, 2) if math.isfinite(mean_tracking_error_px) else None,
@@ -434,44 +291,7 @@ def compute_metrics(records: list[FrameRecord], duration_s: float) -> dict:
         "rms_pixel_error": round(rms_pixel_error, 2) if math.isfinite(rms_pixel_error) else None,
     }
 
-    # ATP 相关指标
-    atp_metrics = _compute_atp_metrics(records, timestamps)
-    atp_metrics["reacquire_success_rate"] = round(reacquire_success_rate, 4) if reacquire_attempts > 0 else None
-
-    return {"metrics": metrics, "atp_metrics": atp_metrics}
-
-
-def _compute_atp_metrics(records: list[FrameRecord], timestamps: np.ndarray) -> dict:
-    """计算 ATP 状态机相关指标。"""
-    atp_states = [r.atp_state for r in records]
-
-    # 首次进入 TRACK_COARSE 的时间
-    time_to_acquire_s = None
-    time_to_fine_track_s = None
-    for r in records:
-        if r.atp_state in ("ACQUIRE", "TRACK_COARSE", "TRACK_FINE") and time_to_acquire_s is None:
-            time_to_acquire_s = r.timestamp
-        if r.atp_state == "TRACK_FINE" and time_to_fine_track_s is None:
-            time_to_fine_track_s = r.timestamp
-
-    # 状态分布（稳态期间，t >= 3s）
-    state_counts: dict[str, int] = {}
-    for r in records:
-        if r.timestamp < 3.0:
-            continue
-        state_counts[r.atp_state] = state_counts.get(r.atp_state, 0) + 1
-
-    total_stable_frames = sum(state_counts.values())
-    if total_stable_frames > 0:
-        state_distribution = {k: round(v / total_stable_frames, 4) for k, v in state_counts.items()}
-    else:
-        state_distribution = None
-
-    return {
-        "time_to_acquire_s": round(time_to_acquire_s, 2) if time_to_acquire_s is not None else None,
-        "time_to_fine_track_s": round(time_to_fine_track_s, 2) if time_to_fine_track_s is not None else None,
-        "state_distribution": state_distribution,
-    }
+    return {"metrics": metrics}
 
 
 def _empty_metrics() -> dict:
@@ -486,16 +306,6 @@ def _empty_metrics() -> dict:
         "mean_settling_time_s": None,
         "tracking_efficiency": None,
         "rms_pixel_error": None,
-    }
-
-
-def _empty_atp_metrics() -> dict:
-    """返回空 ATP 指标字典。"""
-    return {
-        "time_to_acquire_s": None,
-        "time_to_fine_track_s": None,
-        "state_distribution": None,
-        "reacquire_success_rate": None,
     }
 
 
@@ -519,7 +329,7 @@ def write_metrics_csv(output_dir: str, records: list[FrameRecord]) -> None:
         writer = csv.writer(f)
         writer.writerow([
             "timestamp", "pixel_error_x", "pixel_error_y", "pixel_error_total",
-            "detection_found", "atp_state", "yaw_rate_cmd", "pitch_rate_cmd",
+            "detection_found", "yaw_rate_cmd", "pitch_rate_cmd",
         ])
         for r in records:
             writer.writerow([
@@ -528,7 +338,6 @@ def write_metrics_csv(output_dir: str, records: list[FrameRecord]) -> None:
                 _fmt(r.pixel_error_y),
                 _fmt(r.pixel_error_total),
                 r.detection_found,
-                r.atp_state,
                 round(r.yaw_rate_cmd, 4),
                 round(r.pitch_rate_cmd, 4),
             ])
@@ -592,74 +401,6 @@ def write_error_curve_png(output_dir: str, records: list[FrameRecord],
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
-
-
-def write_state_timeline_png(output_dir: str, records: list[FrameRecord],
-                             algorithm_name: str, scenario_id: str) -> None:
-    """生成 ATP 状态时间线图。"""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return
-
-    # 只在有 ATP 状态数据时生成
-    states = [r.atp_state for r in records]
-    if all(s == "N/A" for s in states):
-        return
-
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, "state_timeline.png")
-
-    # 状态到数值的映射
-    state_map = {
-        "SEARCH": 0,
-        "ACQUIRE": 1,
-        "TRACK_COARSE": 2,
-        "TRACK_FINE": 3,
-        "LOST": 4,
-        "REACQUIRE": 5,
-        "N/A": -1,
-    }
-    state_values = [state_map.get(s, -1) for s in states]
-    timestamps = [r.timestamp for r in records]
-
-    fig, ax = plt.subplots(1, 1, figsize=(12, 4))
-
-    # 绘制状态变化
-    for i in range(len(timestamps) - 1):
-        sv = state_values[i]
-        if sv < 0:
-            continue
-        color = _state_color(states[i])
-        ax.plot([timestamps[i], timestamps[i + 1]], [sv, sv], color=color, linewidth=1.5)
-
-    ax.set_yticks(list(state_map.values()))
-    ax.set_yticklabels(list(state_map.keys()), fontsize=8)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("ATP State")
-    ax.set_title(f"ATP State Timeline — {algorithm_name} / {scenario_id}")
-    ax.set_xlim(left=0)
-    ax.grid(True, alpha=0.3, axis="x")
-
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
-def _state_color(state: str) -> str:
-    """ATP 状态对应颜色。"""
-    colors = {
-        "SEARCH": "#9E9E9E",
-        "ACQUIRE": "#FFC107",
-        "TRACK_COARSE": "#2196F3",
-        "TRACK_FINE": "#4CAF50",
-        "LOST": "#F44336",
-        "REACQUIRE": "#FF9800",
-        "N/A": "#BDBDBD",
-    }
-    return colors.get(state, "#BDBDBD")
 
 
 def _fmt(value: float) -> str:
@@ -806,7 +547,6 @@ class BenchmarkRunner:
                     "seed": seed,
                     "duration_s": duration_s,
                     "metrics": metrics_result["metrics"],
-                    "atp_metrics": metrics_result["atp_metrics"],
                     "failure_reason": None,
                     "metadata": {
                         "git_hash": self._git_hash,
@@ -827,7 +567,6 @@ class BenchmarkRunner:
                 write_metrics_csv(experiment_dir, records)
                 write_notes_md(experiment_dir, scenario, algorithm_name, seed, obs_mode, duration_s)
                 write_error_curve_png(experiment_dir, records, algorithm_name, scenario.condition_id)
-                write_state_timeline_png(experiment_dir, records, algorithm_name, scenario.condition_id)
 
             finally:
                 # 恢复目标配置
@@ -852,7 +591,6 @@ class BenchmarkRunner:
                 "seed": seed,
                 "duration_s": duration_s,
                 "metrics": _empty_metrics(),
-                "atp_metrics": _empty_atp_metrics(),
                 "failure_reason": failure_reason,
                 "metadata": {
                     "git_hash": self._git_hash,

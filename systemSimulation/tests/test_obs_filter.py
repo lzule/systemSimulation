@@ -108,15 +108,20 @@ class TestDebugMode(unittest.TestCase):
         self.assertEqual(result["gimbal"], obs["gimbal"])
         # camera 完整
         self.assertEqual(result["camera"], obs["camera"])
-        # frame 完整（同一对象）
-        self.assertIs(result["frame"], obs["frame"])
+        # frame 完整（内容相同，但为隔离副本，不要求同一对象）
+        self.assertEqual(result["frame"].timestamp, obs["frame"].timestamp)
+        self.assertEqual(result["frame"].intrinsics, obs["frame"].intrinsics)
 
     def test_debug_returns_same_reference_or_equal(self):
-        """debug 模式返回值等于输入（直接 return world_obs）。"""
+        """debug 模式返回值字段内容与输入一致（frame 为隔离副本，顶层为新字典）。"""
         obs = _make_world_obs()
         f = ObsFilter(mode="debug")
         result = f.filter_obs(obs)
-        self.assertIs(result, obs, "debug 模式应直接返回 world_obs 引用")
+        # debug 模式现在返回浅拷贝字典（frame 单独隔离），不再是同一引用
+        self.assertEqual(result["timestamp"], obs["timestamp"])
+        self.assertEqual(result["target"], obs["target"])
+        self.assertEqual(result["gimbal"], obs["gimbal"])
+        self.assertEqual(result["camera"], obs["camera"])
 
 
 # ===================================================================

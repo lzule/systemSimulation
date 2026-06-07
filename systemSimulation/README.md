@@ -27,35 +27,33 @@ conda run -n simulation python app.py --mode realtime --duration 60
 
 | 角色 | 推荐阅读 |
 |------|---------|
-| 研究使用者 | [系统主手册](docs/system_manual.md) → [研究工作流手册](docs/research_workflow.md) → [工具手册](docs/tools_guide.md) |
-| 新接手人员 | [系统主手册](docs/system_manual.md) → 各实体 README → [ATP 开发文档](docs/低空场景无线光通信ATP开发文档.md) |
-| 算法开发者 | [系统主手册](docs/system_manual.md) → [树莓派控制程序开发手册](docs/树莓派控制程序开发手册.md) → [算法接入指南](docs/algorithm_integration_guide.md) |
-| 项目维护者 | [系统主手册](docs/system_manual.md) → [维护规则](docs/maintenance_guide.md) → [文档导航](docs/doc-structure.md) |
+| 研究使用者 | [系统主手册](docs/系统主手册.md) → [研究工作流手册](docs/研究工作流手册.md) → [工具手册](docs/工具手册.md) |
+| 新接手人员 | [系统主手册](docs/系统主手册.md) → 各实体 README |
+| 算法开发者 | [系统主手册](docs/系统主手册.md) → [树莓派控制程序开发手册](docs/树莓派控制程序开发手册.md) → [算法接入指南](docs/算法接入指南.md) |
+| 项目维护者 | [系统主手册](docs/系统主手册.md) → [维护规则](docs/维护规则.md) |
 
 ### 按任务
 
 | 任务 | 推荐阅读 |
 |------|---------|
-| 第一次运行 | [系统主手册 §3](docs/system_manual.md) |
-| 跑 benchmark | [研究工作流手册](docs/research_workflow.md) |
-| 对比两个算法 | [研究工作流手册 §3](docs/research_workflow.md) + [工具手册 §3](docs/tools_guide.md) |
-| 诊断算法退化 | [研究工作流手册 §4](docs/research_workflow.md) + [工具手册 §4](docs/tools_guide.md) |
+| 第一次运行 | [系统主手册 §3](docs/系统主手册.md) |
+| 跑 benchmark | [研究工作流手册](docs/研究工作流手册.md) |
+| 对比两个算法 | [研究工作流手册 §3](docs/研究工作流手册.md) + [工具手册 §3](docs/工具手册.md) |
+| 诊断算法退化 | [研究工作流手册 §4](docs/研究工作流手册.md) + [工具手册 §4](docs/工具手册.md) |
 | 写自己的控制程序 | [树莓派控制程序开发手册](docs/树莓派控制程序开发手册.md) |
-| 把算法注册到 benchmark | [算法接入指南](docs/algorithm_integration_guide.md) |
-| 修改实体参数 | [工具手册 §6.4](docs/tools_guide.md)（config_editor） + 对应实体 README |
+| 把算法注册到 benchmark | [算法接入指南](docs/算法接入指南.md) |
+| 修改实体参数 | [工具手册 §6.4](docs/工具手册.md)（config_editor） + 对应实体 README |
 
 ### 全部文档
 
 | 文档 | 说明 |
 |------|------|
-| [系统主手册](docs/system_manual.md) | 平台完整使用说明 |
-| [研究工作流手册](docs/research_workflow.md) | benchmark → 对比 → 诊断 → 出图 |
-| [工具手册](docs/tools_guide.md) | 16 个工具详细说明 |
-| [算法接入指南](docs/algorithm_integration_guide.md) | 4 种算法接入方式 |
+| [系统主手册](docs/系统主手册.md) | 平台完整使用说明 |
+| [研究工作流手册](docs/研究工作流手册.md) | benchmark → 对比 → 诊断 → 出图 |
+| [工具手册](docs/工具手册.md) | 16 个工具详细说明 |
+| [算法接入指南](docs/算法接入指南.md) | 4 种算法接入方式 |
 | [树莓派控制程序开发手册](docs/树莓派控制程序开发手册.md) | 控制程序编写教程 |
-| [文档导航](docs/doc-structure.md) | 文档体系总览 |
-| [ATP 开发文档](docs/低空场景无线光通信ATP开发文档.md) | ATP 总路线图 |
-| [维护规则](docs/maintenance_guide.md) | 后续维护检查清单 |
+| [维护规则](docs/维护规则.md) | 后续维护检查清单 |
 
 ---
 
@@ -71,7 +69,7 @@ Target → Gimbal → Camera → Raspi → Command → Gimbal
 - **Raspi**：延时管线（latest/fifo），可插拔控制程序 + ATP 状态机
 - **Runtime**：统一 tick 调度，命令总线，WorldSnapshot 发布
 
-详细架构和数据流说明请参见[系统主手册 §1](docs/system_manual.md)。
+详细架构和数据流说明请参见[系统主手册 §1](docs/系统主手册.md)。
 
 ---
 
@@ -101,6 +99,6 @@ Target → Gimbal → Camera → Raspi → Command → Gimbal
 
 ## 维护约定
 
-- 改功能后要同步哪些文档 → 参见[维护规则](docs/maintenance_guide.md)
-- 新增工具如何补说明 → 参见[维护规则](docs/maintenance_guide.md)
-- 新增算法如何补实例 → 参见[算法接入指南](docs/algorithm_integration_guide.md)
+- 改功能后要同步哪些文档 → 参见[维护规则](docs/维护规则.md)
+- 新增工具如何补说明 → 参见[维护规则](docs/维护规则.md)
+- 新增算法如何补实例 → 参见[算法接入指南](docs/算法接入指南.md)

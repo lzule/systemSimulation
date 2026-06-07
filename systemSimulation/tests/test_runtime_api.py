@@ -7,7 +7,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.digital_twin_runtime import DigitalTwinRuntime
-from entities.raspi.atp_control_program import AtpControlProgram
 from simulation.bootstrap import build_runtime
 
 
@@ -67,24 +66,12 @@ class TestRuntimeApi(unittest.TestCase):
         ticks2 = [bool(rt.step().gimbal["angle_tick"]) for _ in range(120)]
         self.assertEqual(sum(ticks2), 0)
 
-    def test_build_runtime_exposes_atp_state_in_snapshot(self):
+    def test_build_runtime_exposes_control_program_in_snapshot(self):
         rt = build_runtime(0.0, obs_mode="research")
         snap = rt.step(400)
 
-        self.assertIn("atp_state", snap.raspi)
         self.assertIn("control_program_name", snap.raspi)
         self.assertEqual(snap.raspi["control_program_name"], "BaselineTrackerProgram")
-        self.assertTrue(isinstance(snap.raspi["atp_state"], str))
-
-    def test_atp_control_program_exposes_named_state_in_snapshot(self):
-        rt = build_runtime(0.0, control_program=AtpControlProgram(), obs_mode="research")
-        snap = rt.step(400)
-
-        self.assertEqual(snap.raspi["control_program_name"], "AtpControlProgram")
-        self.assertIn(
-            snap.raspi["atp_state"],
-            {"SEARCH", "ACQUIRE", "TRACK_COARSE", "TRACK_FINE", "LOST", "REACQUIRE"},
-        )
 
     def test_camera_snapshot_exposes_imaging_physics(self):
         """快照中的 camera 应携带 distance_m / sigma_px / brightness 三项物理量。"""

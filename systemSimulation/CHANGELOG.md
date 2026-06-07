@@ -1,6 +1,340 @@
 # 修改历史
 
+## 087-20260604-141411 CLAUDE.md 融合开发规范：TODO驱动+测试诚信+代码质量
+
+**修改者**：Claude Code
+
+**目的**：将参考项目（不便签）的成熟开发规范融合到本项目 CLAUDE.md 中，提升后续开发质量。
+
+**修改内容**：
+1. 新增「4.1 TODO 驱动开发」章节：任务状态实时同步、标记 `[x]` 前的强制检查清单、禁止无测试标记完成
+2. 原「4.1 代码规范」调整为「4.2」，新增：命名必须表达意图、不留重复代码、不保留注释掉的代码和未使用导入、错误处理只在边界做
+3. 原「4.2 测试规范」调整为「4.3」，新增：新增功能必须同步编写测试且保留、修改/删除功能须同步更新/删除测试、测试运行时机指引、测试文件命名对应规范
+4. 新增「测试诚信（红线）」子章节：禁止篡改断言、硬编码预期、跳过失败测试、修改测试数据适配 bug
+5. 原 CHANGELOG 和 ATP 规范拆为独立章节「4.4」「4.5」，内容不变
+6. 原「4.3 多 Agent 协作」调整为「4.6」，新增垂直功能切片拆分和合并冲突立即解决
+7. 两个 CLAUDE.md（项目根 + systemSimulation）同步更新
+
+**验证**：内容审阅确认无遗漏，原有规范完整保留
+
+**修改者**：Claude Code
+
+**目的**：统一 docs 目录文件命名为中文，归档过时文档，删除冗余导航文档。
+
+**修改内容**：
+1. 归档 `docs/低空场景无线光通信ATP开发文档.md` → `archive/docs/`（ATP 代码已删除，路线图过时）
+2. 删除 `docs/doc-structure.md`（与 README.md 高度重复，README 作为唯一导航入口）
+3. 重命名 5 个英文文件为中文：
+   - `algorithm_integration_guide.md` → `算法接入指南.md`
+   - `maintenance_guide.md` → `维护规则.md`
+   - `research_workflow.md` → `研究工作流手册.md`
+   - `system_manual.md` → `系统主手册.md`
+   - `tools_guide.md` → `工具手册.md`
+4. 更新 `README.md` 中所有文档链接，移除 doc-structure 和 ATP 引用
+5. 更新 `docs/` 下各文档内部交叉引用链接
+6. 更新 `CLAUDE.md` 中 ATP 开发文档路径（指向 archive/docs/）
+
+**验证**：docs/ 目录下只剩 6 个中文命名 .md 文件，README.md 和各文档链接指向正确
+
+## 085-20260604-112941 系统瘦身：删除ATP状态机 + 归档非核心文件 + 清理过时代码
+
+**修改者**：Claude Code
+
+**目的**：系统简化，删除不再需要的ATP状态机框架，归档阶段文档和研究产出，清理过时构建产物。
+
+**修改内容**：
+1. 删除ATP状态机核心：`atp_state_machine.py`、`atp_control_program.py`、`trackers/` 目录
+2. 删除 `config.py` 中的 `ATPStateMachineConfig` 配置类
+3. 清理 `entities/raspi/entity.py`、`entities/raspi/__init__.py` 中所有ATP引用
+4. 清理 `simulation/state_buffer.py` 中ATP状态记录
+5. 清理 `simulation/gui/window.py` 中ATP相关UI和算法选项
+6. 清理 `tools/run_benchmark.py`：移除ATP算法注册、FrameRecord.atp_state、ATP指标计算、状态时间线图
+7. 清理 `tests/test_phase4_algorithm_baselines.py`：移除ATP相关测试，保留SummarizeResults测试
+8. 清理 `tests/test_runtime_api.py`：移除ATP相关测试
+9. 删除过时代码：`delay_pipeline.py`、`run_raspi_tracking_demo.py`、`_analyze_tracking.py`
+10. 删除docs构建产物：`node_modules/`、`generate_doc.js`、`package.json`、`package-lock.json`、`.npm-cache/`
+11. 归档阶段文档（阶段0-6）→ `archive/docs/`
+12. 归档研究产出（tracking_truth_analysis等）→ `archive/research/`
+13. 归档非核心GUI工具 → `archive/gui-tools/`
+14. 更新 `docs/doc-structure.md` 导航
+
+**验证结果**：124个测试全部通过，冒烟测试正常。
+
+## 084-20260604-101408 新增30fps vs 60fps相机帧率对比实验
+
+**修改者**：Claude Code
+
+**目的**：研究相机帧率对云台跟踪性能的影响，对比30fps和60fps在各自最优Kp下的跟踪误差差异。
+
+**修改内容**：
+1. `config.py`：CameraConfig新增 `frame_rate_hz` 参数（默认0=无限制，>0=指定帧率）
+2. `entities/camera/entity.py`：CameraEntity实现帧率门控，未到帧间隔时保持上一帧不变
+3. 新增 `tools/frame_rate_experiment.py`：三阶段对比实验脚本（Kp扫描→多seed对比→可视化报告）
+
+**验证结果**：
+- 160个单元测试全部通过，无回归
+- 冒烟测试通过（默认帧率=0时行为不变）
+- 帧率验证：30fps设置→实际28.6fps，60fps设置→实际50.0fps（受延迟管线~23ms限制）
+- 实验结论：60fps在B1场景RMS比30fps降低9.3%（7.68 vs 8.47px），60fps最优Kp(1.1)高于30fps(1.0)
+- 输出：`output/frame_rate_experiment/`（Kp曲线图、对比表、报告）
+
+## 083-20260520-114202 新增 Kp+角度预测对比实验（Kalman + FFT）
+
+**修改者**：Claude Code
+
+**目的**：在角度域实现 Kalman 滤波预测和 FFT 正弦预测，与纯 Kp 基线对比，验证轨迹预测对跟踪性能的提升。
+
+**修改内容**：
+1. 新增 `research/kp_predictor_compare/predictors.py`：角度域预测器实现
+   - `KalmanAnglePredictor`：四时段管道（像素→角度→KF预测→角度误差），恒速模型
+   - `FFTSineAnglePredictor`：FFT 频率检测 + 正弦+线性自适应拟合，无主频时退化为线性外推
+   - 关键设计：时段 4 不做 gimbal 积分，误差 = predicted_target_angle - gimbal_angle_from_obs
+   - horizon 从 obs_dt 自动估算，不预设系统延时
+2. 新增 `research/kp_predictor_compare/run_experiment.py`：3方法 × 3运动 × 2延时 全量对比实验
+
+**实验结果**（12s, realistic, seed=42）：
+- 26ms 延时：Kalman 降低 25-52%，FFT 降低 4-52%。匀加速 Kalman 最优，正弦 FFT 最优。
+- 50ms 延时：预测收益 < 3%。P 控制器本身在高延时下增益不足是瓶颈。
+- 全部 18 组实验检出率 100%，无目标丢失。
+
+**验证**：冒烟测试通过 + 全量实验 18 组完成。
+
 ---
+
+## 082-20260520-095709 修复世界视图底部文字被裁切的问题
+
+**修改者**：Claude Code
+
+**目的**：世界视图（WorldView）底部的状态文字（yaw、目标方位、角度误差等）因 Y 轴翻转导致 QGraphicsSimpleTextItem 被裁切显示不全。
+
+**修改内容**：
+1. 将世界视图底部状态文字从 QGraphicsSimpleTextItem（场景内图元）改为 QLabel（布局组件），放置在 world_view 下方
+2. 移除 `_build_world_items()` 中的 `self.world_title` 图元创建
+3. 更新 `_draw_world()` 中的文字更新逻辑，改为设置 QLabel 的 text 和 stylesheet
+
+**验证**：冒烟测试通过 `python app.py --no-gui --mode offline --duration 1.0`。
+
+## 081-20260520-084113 新增预测器建模原理文档
+
+**修改者**：Claude Code
+
+**目的**：为 `research/predictor_motion_compare/` 研究补充完整的数学建模文档，说明三种预测方法的原理、公式、适用场景与已知问题，便于后续修复和对比分析。
+
+**修改内容**：
+1. 新增 `research/predictor_motion_compare/预测器建模原理.md`，内容包括：
+   - 系统延时链路说明（31 ms 端到端延时分解）
+   - 方法 0（无预测）的滞后误差分析
+   - Alpha-Beta 滤波器完整预测/更新公式
+   - LinearKF 状态转移矩阵、卡尔曼方程、与 Alpha-Beta 的关系
+   - 正弦分解预测器设计矩阵、频率搜索、外推公式
+   - 当前实现的四个已知问题（t² 项过拟合、无退化路径、n_steps 不足、延时未传入 obs）
+   - 三种方法能力对比表
+
+**验证**：文档为纯 Markdown，无代码改动，无需运行验证。
+
+---
+
+## 080-20260520-010640 三方法三运动对比研究目录落地与验证
+**修改者**：Codex
+
+**目的**：在 `systemSimulation/research/predictor_motion_compare/` 下完成三种预测方法与三种运动模式的旁路研究，并跑通脚本、图表和汇总输出。
+
+**修改内容**：
+1. 新增研究目录说明、实施方案、运行脚本和正弦分解预测器。
+2. 在 `realistic` 模式下完成三方法三运动对比，输出全程图和中间 3 秒放大图。
+3. 修复脚本里 `--duration` / `--delay-ms` 只写不生效的问题。
+4. 完成单组烟雾测试和完整 9 组实验验证。
+
+## 079-20260520-001002 研究曲线补充中间3秒局部放大图
+**修改者**：Codex
+
+**目的**：在不动正式源码的前提下，为 `research/tracking_truth_analysis` 实验额外输出中间 3 秒的局部放大图，方便看细节。
+**修改内容**：
+1. **`research/tracking_truth_analysis/run_motion_compare.py`**：新增 `mid3s` 放大图输出，每个场景同时生成全程图和局部图。
+2. **`research/tracking_truth_analysis/output/20260520-000807_motion_compare/`**：本次验证结果已包含 `sinusoidal`、`constant_velocity`、`constant_accel` 三种场景的全程图和放大图。
+3. **`research/tracking_truth_analysis/run_motion_compare.py`**：在 `summary.txt` 里补了说明，提醒周期轨迹的全局峰值时间差容易误导，主看 `mid3s` 局部图。
+
+---
+
+## 078-20260519-235702 代码审查报告问题修复（批次1+批次2）
+
+**修改者**：Claude Code
+
+**目的**：根据代码审查报告（docs/代码审查报告-20260519.md）修复已确认的严重和中等问题。
+
+**修改内容**：
+
+### 批次1（数据隔离与命名）
+
+1. **`entities/camera/entity.py`**（问题3.2）  
+   `get_frame()` 改为返回轻量副本（`image.copy()` + `deepcopy(intrinsics)`），防止外部修改污染内部帧数据。新增 `import copy` 和 `from dataclasses import replace`。
+
+2. **`simulation/obs_filter.py`**（问题6.1 + 4.7）  
+   - debug 模式不再直接返回 `world_obs` 原始引用，改为浅拷贝顶层字典并对 `frame` 字段单独隔离复制  
+   - `_copy_frame()` fallback 分支从原样返回改为 `copy.deepcopy(frame)`
+
+3. **`entities/raspi/atp_state_machine.py`**（问题3.3）  
+   `get_next_search_rate()` 重命名为 `advance_search_step()`，docstring 明确说明每 tick 只能调用一次且有副作用。
+
+4. **`entities/raspi/atp_control_program.py`**（配套）  
+   同步更新两处调用为 `advance_search_step()`。
+
+5. **`entities/target/model.py`**（问题4.5）  
+   - 删除 `_step_waypoint()` 开头死代码（错误的三元表达式赋值）  
+   - 提取 `_parse_waypoint()` 静态辅助方法，消除两处重复的航点格式解析逻辑
+
+6. **`entities/gimbal/entity.py`**（问题4.4）  
+   - `__init__` 新增 `_last_state` 缓存  
+   - `update()` 末尾缓存返回值  
+   - `get_state()` 改为直接读缓存，不再调用 `update(0.0, ...)`，消除 getter 副作用
+
+### 批次2（稳定性与维护）
+
+7. **`entities/raspi/entity.py`**（问题10.3.6）  
+   `__init__` 中对 `delay_cfg` 做 `deepcopy`，防止 `set_delay_profile()` 修改全局单例配置。
+
+8. **`runtime/digital_twin_runtime.py`**（问题4.3）  
+   引入 `logging`，`_apply_due_commands()` 对被拒绝的命令记录 debug 日志。
+
+9. **`simulation/bootstrap.py`**（问题5.3）  
+   等待 READY 的循环上限从魔法数字 3200 改为基于配置计算（最长启动延时 × 3 / dt_s + 10），加注释说明。
+
+10. **`simulation/state_buffer.py`**（问题3.1 + 4.2 + 5.1）  
+    - 新增 `read_all()` 原子读取方法，单次加锁返回 snapshot + frame + 全部曲线  
+    - `metrics_log` 改为 `deque(maxlen=12000)`，`event_log` 改为 `deque(maxlen=1000)`  
+    - `_extract_detection()` 阈值从硬编码 180 改为 `camera_cfg.detection_threshold`
+
+11. **`simulation/gui/window.py`**（问题3.1 + 10.3.1 + 10.3.5 + 10.3.7 + 4.6）  
+    - `_render_tick()` 改用 `read_all()` 原子读取，消除跨 tick 混读  
+    - `_on_reset()` 新增 `isRunning()` 检查，旧线程未退出时跳过 reset  
+    - `_draw_world()` 中 `sensor_w_mm` 从硬编码 4.8 改为 `camera_cfg.sensor_w_mm`  
+    - `_on_save()` 导出摘要算法名优先使用 `_algo_key_override`  
+    - 删除死代码 `_on_apply_delay()` 方法  
+    - 顶部 import 补充 `camera_cfg`
+
+### 测试适配
+
+12. **`tests/test_phase4_algorithm_baselines.py`**  
+    `TestRasterScan` 中三处 `get_next_search_rate()` 调用同步更新为 `advance_search_step()`，类 docstring 同步更新。
+
+13. **`tests/test_obs_filter.py`**  
+    `TestDebugMode` 两个测试用例更新断言：debug 模式现在返回隔离副本而非原始引用，改用内容相等断言替代 `assertIs`。
+
+**验证结果**：  
+- 冒烟测试通过（`app.py --no-gui --mode offline --duration 1.0`）  
+- 全量测试 160/160 通过（`python -m unittest discover -s tests`）
+
+---
+
+## 077-20260519-230042 上帝视角跟踪分析修正真值对齐与角速度口径
+**目的**：修正 `research/tracking_truth_analysis/run_truth_analysis.py` 中的两处计算问题，避免把线速度当成目标角速度，并让真值按观测时间正确对齐到同一拍世界快照。
+
+**修改者**：Codex
+
+**修改内容**：
+1. **research/tracking_truth_analysis/run_truth_analysis.py** - 将真值对齐基准改为观测包自身时间戳
+2. **research/tracking_truth_analysis/run_truth_analysis.py** - 将目标角速度改为由目标位置与速度计算方位角角速度
+3. **research/tracking_truth_analysis/run_truth_analysis.py** - 增加时间戳精确匹配与越界保护
+
+**验证**：
+1. 重新运行 `conda run -n simulation python research/tracking_truth_analysis/run_truth_analysis.py --duration 12 --delay-ms 26 --obs-mode realistic --zoom-seconds 3`
+2. `truth_err_mean_abs` 从原先的 2.6359 降至约 0.3721，`obs_truth_err_mean_abs` 也同步回到约 0.3715
+3. 复看 `truth_yaw_mid3s.png`，目标角与云台角已基本贴合，误差曲线回到零附近小幅摆动
+---
+
+## 076-20260519-224701 上帝视角跟踪分析脚本首版跑通并补充诊断图
+
+**目的**：完成 `research/tracking_truth_analysis/` 下第一版上帝视角分析脚本，打通观测视角与真值视角的对照导出，并补充误差与速度关系诊断图，验证基础跟踪方法的真实行为。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **research/tracking_truth_analysis/run_truth_analysis.py** — 新增上帝视角分析脚本，支持在 `realistic` 模式下运行 base 跟踪，并同步导出观测视角图、真值视角图、原始 CSV 和摘要文本
+2. **research/tracking_truth_analysis/run_truth_analysis.py** — 将观测数据与仿真快照按时间戳配对，避免用样本序号硬对齐导致真值失真
+3. **research/tracking_truth_analysis/run_truth_analysis.py** — 新增三张诊断图：`truth_error_vs_target_rate.png`、`truth_error_vs_gimbal_rate.png`、`obs_error_vs_truth_error.png`
+
+**验证**：
+
+1. 运行 `conda run -n simulation python -m py_compile research/tracking_truth_analysis/run_truth_analysis.py` 通过
+2. 运行 `conda run -n simulation python research/tracking_truth_analysis/run_truth_analysis.py --duration 4.0` 成功生成输出目录
+3. 抽查 `summary.txt` 与图像，确认真值误差与目标真实角速度存在明显相关，观测误差和真值误差并不完全一致
+
+---
+
+## 075-20260519-222704 上帝视角跟踪分析专题：补充详细实施方案与计划文档
+
+**目的**：在既有研究目录基础上，补齐“上帝视角验证”专题的正式实施方案，明确研究目标、分析步骤、图表计划、输出物和验收标准，便于后续按同一口径推进。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **research/tracking_truth_analysis/上帝视角验证实施方案与计划.md** — 新增本地研究计划文档，明确背景、总目标、研究边界、数据视角、实施步骤、图表计划、输出计划、风险点和验收标准
+
+**验证**：
+
+1. 已按 `systemSimulation/research/tracking_truth_analysis/` 目录落盘
+2. 已核对文档内容与当前研究边界一致：允许新增研究脚本和分析产物，但不修改项目现有源码
+3. 已确认本次仅新增研究计划文档，不涉及 `simulation/`、`entities/`、`runtime/` 等正式实现
+
+---
+
+## 074-20260519-221233 新增上帝视角跟踪分析研究目录与专题说明
+
+**目的**：为“基础跟踪方法在 realistic 模式下的上帝视角验证”建立独立研究目录，后续在不修改项目现有源码的前提下，开展观测视角与真值视角对照分析。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **research/tracking_truth_analysis/README.md** — 新增专题说明文档，明确研究目的、边界、双视角分析思路、建议输出和当前阶段结论
+2. **research/tracking_truth_analysis/output/.gitkeep** — 预留研究输出目录，后续用于存放脚本产物、图表和数据
+
+**验证**：
+
+1. 已核对当前仓库规则、默认工作目录与 Python 执行口径
+2. 已确认本次工作仅新增研究目录与说明，不修改 `simulation/`、`entities/`、`runtime/` 等现有源码
+3. 已检查专题目录成功创建，后续可直接在该目录下继续开展旁路研究
+
+---
+
+## 073-20260519-221226 审查报告三次复核补充：确认第十节新增问题并补录导出摘要口径缺陷
+
+**目的**：继续核对 `docs/代码审查报告-20260519.md` 第十节中新补的二次复核内容，确认哪些结论已经被代码直接支撑，并补录这轮新增发现的真实问题，保证审查报告和当前仓库状态一致。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **docs/代码审查报告-20260519.md** — 复核并保留第十节中关于 reset 线程退出、ATP 时间轴重建、ATP 窗口索引脆弱、算法下拉硬编码、FOV 传感器宽度硬编码、`set_delay_profile` 污染全局配置的判断
+2. **docs/代码审查报告-20260519.md** — 新增“手动导出摘要时算法名称可能写错”问题，指出 `_on_save()` 与实际算法选择优先级不一致，可能把运行中的非基线算法导出成 `BaselineTrackerProgram`
+3. **docs/代码审查报告-20260519.md** — 在第十节末尾同步更新优先级列表，把导出摘要口径问题纳入后续修复清单
+
+**验证**：
+
+1. 回读 `simulation/gui/window.py`，确认 `_on_reset()` 在 `wait(2000)` 后未检查 `isRunning()`，存在超时后继续创建新 worker 的窗口
+2. 回读 `simulation/gui/window.py`，确认 `_draw_timeline()` 每帧都会清空并重建 ATP 区域对象，且 `atp_windowed` 通过位置索引与曲线窗口绑定，和原子读取问题叠加后确有脆弱性
+3. 回读 `simulation/gui/window.py`，确认 `_on_save()` 使用 `self.cfg.control_program_path or "BaselineTrackerProgram"` 写摘要，与下拉切换后的实际运行算法口径不一致
+
+## 072-20260519-220221 代码审查报告复核修订：剔除误报并补充新发现
+
+**目的**：复核 `docs/代码审查报告-20260519.md` 与当前仓库实际代码是否一致，移除已失效或判断不准确的结论，补充这次实测确认的新问题，避免后续修复工作被错误优先级误导。
+
+**修改者**：Codex
+
+**修改内容**：
+
+1. **docs/代码审查报告-20260519.md** — 结合项目真实功能、当前实现、现有测试和实际运行结果，重写审查结论结构，区分“确认成立”“已失效/不准确”“新增发现”三类问题
+2. **docs/代码审查报告-20260519.md** — 移除“延时预算超过100%”和“ATP搜索off-by-one”两条误报；说明当前延时模型按并行观测阶段计算，总延时与用户预算一致
+3. **docs/代码审查报告-20260519.md** — 新增“相机帧对象直接暴露，外部可修改内部数据”“debug观测模式直接透传原始对象”“快照与帧读取边界不严”等本次复核实测确认的问题
+4. **docs/代码审查报告-20260519.md** — 重新排序优先级，突出 GUI 原子读取、帧数据隔离、状态推进命名、全局配置污染四项更应优先处理的问题
+
+**验证**：
+
+1. 运行 `conda run -n simulation python -m unittest tests.test_phase4_algorithm_baselines tests.test_delay_strategies tests.test_digital_twin_runtime -v`，61 项测试全部通过
+2. 运行 `conda run -n simulation python -c "from simulation.bootstrap import build_runtime; rt=build_runtime(delay_ms=100.0, obs_mode='debug'); print(rt.raspi.get_delay_profile())"`，确认 `delay_ms=100` 时配置为 `25/50/25/25ms`，按并行观测模型总延时为 100ms
+3. 运行 `conda run -n simulation python -c "from simulation.bootstrap import build_runtime; rt=build_runtime(delay_ms=0.0, obs_mode='debug'); rt.step(1); f=rt.camera.get_frame(); arr_before=f.image.copy(); f.image[0,0]=123; f2=rt.camera.get_frame(); print(int(f2.image[0,0]), int(arr_before[0,0]))"`，确认外部修改返回帧会污染内部帧数据
 
 ## 071-20260519-152049 角度曲线额外实验方案补充：加入轨迹预测算法曲线设计
 

@@ -24,6 +24,7 @@ class CameraConfig:
     # 丢检
     miss_detection_base_rate: float = 0.0     # 0 = 永不丢检（向后兼容）
     miss_sigma_gain_px: float = 0.0           # 0 = 永不丢检
+    frame_rate_hz: float = 0.0                # 0 = 每tick渲染（向后兼容），>0 = 指定帧率
 
     @property
     def pixel_size_mm(self) -> float:
@@ -169,24 +170,6 @@ MOTION_MODE_PARAMS: dict[str, list[str]] = {
 
 
 @dataclass
-class ATPStateMachineConfig:
-    """ATP（捕获-跟踪-保持）状态机配置参数。"""
-    n_detect_enter: int = 3             # 连续检出帧数阈值：SEARCH→ACQUIRE
-    n_acquire_confirm: int = 5          # 连续确认帧数阈值：ACQUIRE→TRACK_COARSE
-    n_lost_enter: int = 5               # 连续丢失帧数阈值：→LOST
-    n_fine_enter: int = 10              # 连续低误差帧数阈值：TRACK_COARSE→TRACK_FINE
-    coarse_error_threshold_px: float = 50.0  # 粗跟踪→精跟踪像素误差阈值
-    search_yaw_range_deg: float = 180.0     # 搜索 yaw 扫描范围（±）
-    search_pitch_range_deg: float = 90.0    # 搜索 pitch 扫描范围（±）
-    search_step_deg: float = 5.0            # 搜索步进角度
-    search_dwell_frames: int = 3            # 每步驻留帧数
-    search_rate_dps: float = 30.0           # 搜索扫描角速度（度/秒）
-    reacquire_timeout_s: float = 5.0        # 重捕获超时时间（秒）
-    reacquire_search_step_deg: float = 10.0 # 重捕获搜索步进角度
-    reacquire_search_rate_dps: float = 45.0 # 重捕获搜索角速度（度/秒）
-
-
-@dataclass
 class SceneConfig:
     duration_s: float = 20.0
     dt_s: float = 0.005
@@ -220,4 +203,3 @@ tracker_tuning_cfg = TrackerTuningConfig()
 target_cfg = TargetConfig()
 scene_cfg = SceneConfig()
 obs_cfg = ObsConfig()
-atp_sm_cfg = ATPStateMachineConfig()

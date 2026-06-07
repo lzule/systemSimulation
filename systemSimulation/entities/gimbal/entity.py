@@ -62,6 +62,8 @@ class GimbalEntity:
             "angle_tick": False,
             "rate_tick": False,
         }
+        # 缓存最近一次 update() 返回的状态，供 get_state() 无副作用读取
+        self._last_state: Optional[GimbalState] = None
 
     @staticmethod
     def wrap_0_360(angle_deg: float) -> float:
@@ -133,7 +135,7 @@ class GimbalEntity:
             plant_state = self.plant.get_state()
             ctrl = self._last_ctrl
 
-        return GimbalState(
+        self._last_state = GimbalState(
             timestamp=timestamp,
             power_state=self.power_state,
             mode=self.controller.mode,
@@ -148,9 +150,14 @@ class GimbalEntity:
             rate_tick=bool(ctrl["rate_tick"]),
             last_command_apply_timestamp=self.last_command_apply_timestamp,
         )
+        return self._last_state
 
     def get_state(self, timestamp: float) -> Dict[str, float | str | bool | None]:
-        state = self.update(0.0, timestamp)
+        # 直接返回缓存状态，避免调用 update() 产生副作用（刷新控制器）。
+        # 若尚未执行过 update()（首次调用），则以 dt=0 初始化一次。
+        if self._last_state is None:
+            self.update(0.0, timestamp)
+        state = self._last_state
         return {
             "timestamp": state.timestamp,
             "power_state": state.power_state,

@@ -66,6 +66,18 @@ class TargetKinematics3D:
             self._step_waypoint(dt)
         return self.x, self.y, self.z
 
+    @staticmethod
+    def _parse_waypoint(wp) -> tuple[float, float, float, float]:
+        """解析航点元组，兼容旧格式 (x, y, speed) 和新格式 (x, y, z, speed)。
+
+        Returns:
+            (tx, ty, tz, speed)
+        """
+        if len(wp) == 3:
+            return float(wp[0]), float(wp[1]), 0.0, float(wp[2])
+        else:
+            return float(wp[0]), float(wp[1]), float(wp[2]), float(wp[3])
+
     def _step_waypoint(self, dt: float) -> None:
         """航点导航：按顺序飞向每个航点，到达后切换下一个。"""
         if not self._wp_list:
@@ -74,14 +86,7 @@ class TargetKinematics3D:
             self.vz = 0.0
             return
 
-        wp = self._wp_list[self._wp_index]
-        tx, ty, tz, speed = wp[0], wp[1], wp[2] if len(wp) > 3 else 0.0, wp[3] if len(wp) > 3 else wp[2]
-        # 兼容旧格式 (x, y, speed) 和新格式 (x, y, z, speed)
-        if len(wp) == 3:
-            tx, ty, speed = wp[0], wp[1], wp[2]
-            tz = 0.0
-        elif len(wp) == 4:
-            tx, ty, tz, speed = wp[0], wp[1], wp[2], wp[3]
+        tx, ty, tz, speed = self._parse_waypoint(self._wp_list[self._wp_index])
 
         dx = tx - self.x
         dy = ty - self.y
@@ -99,12 +104,7 @@ class TargetKinematics3D:
                 self.vy = 0.0
                 self.vz = 0.0
                 return
-            wp = self._wp_list[self._wp_index]
-            if len(wp) == 3:
-                tx, ty, speed = wp[0], wp[1], wp[2]
-                tz = 0.0
-            elif len(wp) == 4:
-                tx, ty, tz, speed = wp[0], wp[1], wp[2], wp[3]
+            tx, ty, tz, speed = self._parse_waypoint(self._wp_list[self._wp_index])
             dx = tx - self.x
             dy = ty - self.y
             dz = tz - self.z

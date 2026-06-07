@@ -65,7 +65,11 @@ class ObsFilter:
             过滤后的观测字典（深拷贝，不修改原始 world_obs）。
         """
         if self.mode == "debug":
-            return world_obs
+            # 浅拷贝顶层字典，避免控制程序修改顶层键影响 runtime 内部；
+            # frame 单独隔离复制，防止控制程序修改 frame.image 污染相机内部数据。
+            result = dict(world_obs)
+            result["frame"] = self._copy_frame(world_obs.get("frame"))
+            return result
 
         if self.mode == "research":
             return self._filter_research(world_obs)
@@ -198,5 +202,5 @@ class ObsFilter:
             image = frame.image.copy() if isinstance(frame.image, np.ndarray) else frame.image
             intrinsics = copy.deepcopy(frame.intrinsics)
             return replace(frame, image=image, intrinsics=intrinsics, optional_gt=None)
-        # 其它对象：保守返回原对象
-        return frame
+        # 其它对象：保守深拷贝，避免控制程序修改污染原始数据
+        return copy.deepcopy(frame)

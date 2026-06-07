@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import copy
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -55,6 +56,10 @@ class CameraEntity:
 
         self.frame_id = 0
         self.last_frame: Optional[FramePacket] = None
+        self._last_frame_time: float = -1e9
+        self._frame_interval: float = (
+            1.0 / self.cfg.frame_rate_hz if self.cfg.frame_rate_hz > 0 else 0.0
+        )
         self._last_state = CameraState(0.0, POWER_OFF, self.f_current_mm, self.f_target_mm, 0.0, 0, False, float("nan"), float("nan"), 0.0, float(self.cfg.beacon_sigma_px), 0.0)
 
     def power_on(self, timestamp: float) -> CommandResult:
@@ -142,19 +147,42 @@ class CameraEntity:
             # 目标距离（用于距离相关成像模型）
             distance_m = math.sqrt(x * x + y * y + z * z)
 
-            frame, in_fov, u_px, v_px, sigma_px, brightness = self._render_frame(alpha, beta, timestamp, distance_m)
-            intrinsics = {
-                "f_mm": self.f_current_mm,
-                "f_px": self._focal_px(),
-                "cx": self.cfg.resolution_w / 2.0,
-                "cy": self.cfg.resolution_h / 2.0,
-                "width": float(self.cfg.resolution_w),
-                "height": float(self.cfg.resolution_h),
-                "sigma_px": float(sigma_px),
-            }
-            gt = {"u_px": u_px, "v_px": v_px, "in_fov": float(in_fov)} if in_fov else None
-            self.last_frame = FramePacket(timestamp=timestamp, image=frame, intrinsics=intrinsics, optional_gt=gt)
-            self.frame_id += 1
+            # 帧率控制：仅在达到帧间隔时渲染新帧
+            new_frame_available = True
+            if self._frame_interval > 0:
+                if timestamp - self._last_frame_time >= self._frame_interval - 1e-9:
+                    self._last_frame_time = timestamp
+                else:
+                    new_frame_available = False
+
+            if new_frame_available:
+                frame, in_fov, u_px, v_px, sigma_px, brightness = self._render_frame(alpha, beta, timestamp, distance_m)
+                intrinsics = {
+                    "f_mm": self.f_current_mm,
+                    "f_px": self._focal_px(),
+                    "cx": self.cfg.resolution_w / 2.0,
+                    "cy": self.cfg.resolution_h / 2.0,
+                    "width": float(self.cfg.resolution_w),
+                    "height": float(self.cfg.resolution_h),
+                    "sigma_px": float(sigma_px),
+                }
+                gt = {"u_px": u_px, "v_px": v_px, "in_fov": float(in_fov)} if in_fov else None
+                self.last_frame = FramePacket(timestamp=timestamp, image=frame, intrinsics=intrinsics, optional_gt=gt)
+                self.frame_id += 1
+            else:
+                # 未到帧间隔：保持 last_frame 不变，但从几何关系计算状态量
+                fov_h_half = self._fov_h_half_rad()
+                fov_v_half = self._fov_v_half_rad()
+                in_fov = abs(alpha) <= fov_h_half and abs(beta) <= fov_v_half
+                if in_fov:
+                    f_px = self._focal_px()
+                    u_px = f_px * math.tan(alpha) + self.cfg.resolution_w / 2.0
+                    v_px = self.cfg.resolution_h / 2.0 - f_px * math.tan(beta)
+                else:
+                    u_px = float("nan")
+                    v_px = float("nan")
+                sigma_px = float(self.cfg.beacon_sigma_px)
+                brightness = 0.0
 
         self._last_state = CameraState(
             timestamp=timestamp,
@@ -190,4 +218,13 @@ class CameraEntity:
         }
 
     def get_frame(self) -> Optional[FramePacket]:
-        return self.last_frame
+        # 返回轻量副本，防止外部修改 image/intrinsics 污染内部状态
+        if self.last_frame is None:
+            return None
+        frame = self.last_frame
+        return replace(
+            frame,
+            image=frame.image.copy(),
+            intrinsics=copy.deepcopy(frame.intrinsics),
+            # optional_gt 为只读数据，保留原引用
+        )
