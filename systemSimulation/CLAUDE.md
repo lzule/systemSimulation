@@ -138,7 +138,7 @@ class ControlProgram(Protocol):
 
 - 配置集中在 `config.py`，以模块级单例 dataclass 实例提供（如 `camera_cfg`、`gimbal_cfg`）。不要新建配置文件。
 - 项目语言为中文（注释、文档、UI 标签），保持已有中文内容不变。
-- 添加新目标运动类型：在 `TargetConfig.motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics2D` 实现逻辑。Config Editor 自动读取。
+- 添加新目标运动类型：在 `TargetConfig.motion_type` 的 `Literal` 中加模式名 → 在 `MOTION_MODE_PARAMS` 加字段映射 → 在 `TargetConfig` 加参数 → 在 `TargetKinematics3D` 实现逻辑。
 - 修改实体代码时，同步更新对应 `entities/<name>/README.md`。
 - 变量和函数命名必须能表达意图，禁止使用无意义的缩写（如 `a`、`tmp2`）。
 - 不留重复代码。如果同一段逻辑出现两次以上，提取为公共函数。

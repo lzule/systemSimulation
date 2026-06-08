@@ -142,7 +142,3 @@ class TargetKinematics3D:
     @property
     def distance_m(self) -> float:
         return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
-
-
-# 向后兼容别名
-TargetKinematics2D = TargetKinematics3D

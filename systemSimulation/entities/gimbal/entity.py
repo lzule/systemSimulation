@@ -154,9 +154,24 @@ class GimbalEntity:
 
     def get_state(self, timestamp: float) -> Dict[str, float | str | bool | None]:
         # 直接返回缓存状态，避免调用 update() 产生副作用（刷新控制器）。
-        # 若尚未执行过 update()（首次调用），则以 dt=0 初始化一次。
+        # 首次调用时构造零值初始状态，不触发 update()。
         if self._last_state is None:
-            self.update(0.0, timestamp)
+            initial_yaw = float(self.gimbal_cfg.initial_angle_deg)
+            self._last_state = GimbalState(
+                timestamp=timestamp,
+                power_state=POWER_OFF,
+                mode=self.controller.mode,
+                yaw_deg_internal=initial_yaw,
+                yaw_deg_display=self.wrap_0_360(initial_yaw),
+                pitch_deg=0.0,
+                yaw_rate_dps=0.0,
+                pitch_rate_dps=0.0,
+                yaw_rate_ref_dps=0.0,
+                pitch_rate_ref_dps=0.0,
+                angle_tick=False,
+                rate_tick=False,
+                last_command_apply_timestamp=None,
+            )
         state = self._last_state
         return {
             "timestamp": state.timestamp,

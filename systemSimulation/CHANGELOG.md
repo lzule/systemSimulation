@@ -1,5 +1,44 @@
 # 修改历史
 
+## 088-20260607-221211 代码审阅报告维护：BUG修复+设计改进+测试补充
+
+**修改者**：Claude Code
+
+**目的**：针对 `docs/todo/代码审阅报告-20260607.md` 的审阅报告，对全量活跃代码进行维护。
+
+**修改内容**：
+
+阶段1（高优先级Bug）：
+1. **BUG-01**：`TargetEntity.__init__()` 改为 `copy.deepcopy(cfg or target_cfg)`，防止全局配置被原地修改后影响已有实例（`entities/target/entity.py`）
+2. **BUG-05**：`RaspiDelayModel` 新增 `reconfigure()` 方法，`set_delay_profile()` 改为调用 `reconfigure()` 而非重建模型，保留正在处理的观测（`entities/raspi/model.py`、`entities/raspi/entity.py`）
+
+阶段2（中优先级Bug+设计问题）：
+3. **BUG-03**：`GimbalEntity.get_state()` 首次调用时直接构造零值 `GimbalState`，不再触发 `update()` 产生控制器积分偏移（`entities/gimbal/entity.py`）
+4. **BUG-04**：`CascadedController2Axis.step()` 新增 `_last_rate_cmd` 缓存，非 rate_tick 时复用上次输出，删除用 dt 替代 rate_dt 的错误分支（`entities/gimbal/control.py`）
+5. **FUNC-01**：定义 `COMMAND_PAYLOAD_SCHEMA`，在 `_dispatch()` 入口校验 payload 字段完整性和类型（`runtime/types.py`、`runtime/digital_twin_runtime.py`）
+6. **DESIGN-01/02/STYLE-01**：更新 `baseline.py` 冻结值使其与当前 config.py 默认值（6.0/100）一致，并注释偏离原因（距离相关亮度衰减引入后的必要调整）（`baseline.py`）
+7. **DESIGN-08**：在 `GimbalConfig` 的 `angle_min_deg`/`angle_max_deg` 加注释说明当前仅对 pitch 轴生效（`config.py`）
+
+阶段3（低优先级清理）：
+8. **BUG-02**：`tracker_program.py` 中 `frame.intrinsics` 访问加防御检查（`entities/raspi/tracker_program.py`）
+9. **BUG-06**：realtime 模式改用 `time.perf_counter()` 补偿式 sleep，消除时间漂移（`simulation/headless.py`）
+10. **DESIGN-03**：`waypoints` 类型改为 `list[...] | None = None`（`config.py`）
+11. **DESIGN-04**：删除残留 `TargetKinematics2D = TargetKinematics3D` 别名（`entities/target/model.py`）
+12. **DESIGN-06**：`apply_delay_profile()` docstring 补充说明 image_read 和 state_read 并行执行（`simulation/bootstrap.py`）
+13. **FUNC-02**：`POWER_FAULT` 加注释标注为预留状态（`runtime/types.py`）
+14. **FUNC-05**：两个 `CLAUDE.md` 删除过时的 "Config Editor 自动读取" 和 `TargetKinematics2D` 引用
+15. **STYLE-03**：`wrap_pm180` 直接从 `runtime.types` 导入，消除 `simulation/types.py` 中的间接导入链（`simulation/state_buffer.py`、`simulation/gui/window.py`、`simulation/types.py`）
+
+阶段4（测试覆盖补充）：
+16. 新增 `tests/test_code_review_fixes.py`：BUG-01 深拷贝测试、BUG-03 无副作用测试、BUG-04 rate_tick 缓存测试、FUNC-01 命令校验测试（13 tests）
+17. 扩展 `tests/test_obs_filter.py`：research/realistic 边界条件测试（4 tests）
+18. 新增 `tests/test_bootstrap_timeout.py`：boot 流程验证和步数计算测试（3 tests）
+
+**验证**：
+- 全量测试 141 tests 全部通过（原 124 + 新增 17）
+- 冒烟测试 `app.py --no-gui --mode offline --duration 1.0` 通过
+- `baseline.py` 校验通过，config 与冻结基线一致
+
 ## 087-20260604-141411 CLAUDE.md 融合开发规范：TODO驱动+测试诚信+代码质量
 
 **修改者**：Claude Code

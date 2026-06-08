@@ -13,8 +13,8 @@ class CameraConfig:
     focal_min_mm: float = 4.4
     focal_max_mm: float = 200.0
     boot_delay_s: float = 0.5
-    beacon_sigma_px: float = 6.0
-    detection_threshold: int = 100
+    beacon_sigma_px: float = 6.0       # 光斑高斯 sigma（px）
+    detection_threshold: int = 100     # 像素亮度阈值，≥此值视为目标光斑
     # 距离相关 sigma
     sigma_ref_distance_m: float = 80.0       # 0 = 固定 sigma（向后兼容）；80m = 参考距离
     # 亮度变化
@@ -53,8 +53,8 @@ class CameraConfig:
 
 @dataclass
 class GimbalConfig:
-    angle_min_deg: float = -90.0
-    angle_max_deg: float = 90.0
+    angle_min_deg: float = -90.0       # yaw/pitch 机械限位下限（当前仅对 pitch 轴生效）
+    angle_max_deg: float = 90.0        # yaw/pitch 机械限位上限（当前仅对 pitch 轴生效）
     max_velocity_dps: float = 60.0
     response_tau_s: float = 0.03
     initial_angle_deg: float = 0.0
@@ -154,7 +154,7 @@ class TargetConfig:
     random_damping: float = 0.98
     random_seed: int = 42
 
-    waypoints: list[tuple[float, ...]] = None  # [(x, y, z, speed), ...], 兼容 (x, y, speed); speed=0 表示悬停
+    waypoints: list[tuple[float, ...]] | None = None  # [(x, y, z, speed), ...], 兼容 (x, y, speed); speed=0 表示悬停
     waypoint_arrival_radius_m: float = 1.0
 
 

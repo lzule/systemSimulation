@@ -10,8 +10,8 @@ from typing import Any, Deque, List, Optional
 import numpy as np
 
 from config import camera_cfg
-from runtime.types import Detection
-from simulation.types import FrameSample, wrap_pm180
+from runtime.types import Detection, wrap_pm180
+from simulation.types import FrameSample
 
 
 class UiStateBuffer:

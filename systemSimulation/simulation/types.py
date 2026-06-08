@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from runtime.types import Detection, wrap_pm180
+from runtime.types import Detection
 
 UI_TEXT = {
     "title": "完整实时仿真仪表盘（Raspi 闭环）",
@@ -66,6 +66,3 @@ class FrameSample:
     image: np.ndarray
     intrinsics: dict[str, float]
     detection: Detection
-
-
-# wrap_pm180 已统一到 runtime.types，此处从 runtime.types 导入

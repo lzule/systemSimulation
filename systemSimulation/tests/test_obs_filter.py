@@ -380,5 +380,64 @@ class TestObsFilterValidation(unittest.TestCase):
         self.assertIn("foo", str(ctx.exception))
 
 
+# ===================================================================
+# TestResearchEdgeCases — FUNC-06/TEST-01
+# ===================================================================
+
+class TestResearchEdgeCases(unittest.TestCase):
+    """research 模式边界条件测试。"""
+
+    def test_research_handles_none_frame(self):
+        """frame=None 时 research 模式不崩溃。"""
+        obs = _make_world_obs()
+        obs["frame"] = None
+        f = ObsFilter(mode="research")
+        result = f.filter_obs(obs)
+        self.assertIsNone(result["frame"])
+
+    def test_research_handles_dict_frame(self):
+        """frame 为 dict 时 research 模式正确剥离 optional_gt。"""
+        obs = _make_world_obs()
+        obs["frame"] = {
+            "image": np.zeros((10, 10), dtype=np.uint8),
+            "intrinsics": {"cx": 5.0, "cy": 5.0},
+            "optional_gt": {"u_px": 5.0, "v_px": 5.0},
+        }
+        f = ObsFilter(mode="research")
+        result = f.filter_obs(obs)
+        self.assertNotIn("optional_gt", result["frame"])
+
+
+# ===================================================================
+# TestRealisticEdgeCases — FUNC-06/TEST-01
+# ===================================================================
+
+class TestRealisticEdgeCases(unittest.TestCase):
+    """realistic 模式边界条件测试。"""
+
+    def test_realistic_gimbal_yaw_deg_fallback(self):
+        """gimbal 缺少 yaw_deg_internal 但有 yaw_deg 时 realistic 模式不崩溃。"""
+        obs = _make_world_obs()
+        del obs["gimbal"]["yaw_deg_internal"]
+        obs["gimbal"]["yaw_deg"] = 42.0
+        f = ObsFilter(mode="realistic", encoder_noise_std_deg=0.0, gyro_noise_std_dps=0.0)
+        # filter_obs 不应崩溃（即使字段缺失）
+        result = f.filter_obs(obs)
+        # 验证结果中 gimbal 有输出
+        self.assertIn("gimbal", result)
+
+    def test_realistic_handles_dict_frame(self):
+        """frame 为 dict 时 realistic 模式正确剥离 optional_gt。"""
+        obs = _make_world_obs()
+        obs["frame"] = {
+            "image": np.zeros((10, 10), dtype=np.uint8),
+            "intrinsics": {"cx": 5.0, "cy": 5.0},
+            "optional_gt": {"u_px": 5.0, "v_px": 5.0},
+        }
+        f = ObsFilter(mode="realistic")
+        result = f.filter_obs(obs)
+        self.assertNotIn("optional_gt", result["frame"])
+
+
 if __name__ == "__main__":
     unittest.main()

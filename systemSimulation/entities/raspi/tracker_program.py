@@ -126,8 +126,9 @@ class BaselineTrackerProgram:
             pixel_error_x = self.last_pixel_error_x
             pixel_error_y = self.last_pixel_error_y
         else:
-            cx = float(frame.intrinsics["cx"])
-            cy = float(frame.intrinsics["cy"])
+            intrinsics = getattr(frame, "intrinsics", None) or {}
+            cx = float(intrinsics.get("cx", 0.0))
+            cy = float(intrinsics.get("cy", 0.0))
 
             # 水平像素误差
             pixel_error_x = float(det.cx) - cx

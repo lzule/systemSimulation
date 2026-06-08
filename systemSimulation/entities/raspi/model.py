@@ -27,6 +27,19 @@ class RaspiDelayModel:
         # fifo 模式的缓冲队列
         self._obs_queue: deque = deque()
 
+    def reconfigure(self, buffer_policy: str, queue_capacity: int) -> None:
+        """更新缓冲策略和容量，不重置当前处理状态。"""
+        if buffer_policy not in ("latest", "fifo"):
+            raise ValueError(f"未知缓冲策略: {buffer_policy!r}")
+        self.buffer_policy = buffer_policy
+        self.queue_capacity = max(1, queue_capacity)
+        # 从 fifo 切到 latest 时清空队列（latest 不使用队列）
+        if buffer_policy == "latest":
+            self._obs_queue.clear()
+        # 队列超出新容量时裁剪最旧的
+        while len(self._obs_queue) > self.queue_capacity:
+            self._obs_queue.popleft()
+
     def reset(self) -> None:
         self.state = self.IDLE
         self.ready_at = 0.0

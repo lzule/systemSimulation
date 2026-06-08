@@ -16,7 +16,7 @@ from entities.gimbal.client import GimbalClient
 from entities.raspi.entity import RaspiEntity
 from entities.raspi.client import RaspiClient
 from entities.target.entity import TargetEntity
-from runtime.types import Command, CommandResult, WorldSnapshot
+from runtime.types import COMMAND_PAYLOAD_SCHEMA, Command, CommandResult, WorldSnapshot
 
 
 @dataclass
@@ -68,6 +68,18 @@ class DigitalTwinRuntime:
 
     def _dispatch(self, command: Command) -> CommandResult:
         ts = self._time
+
+        # payload schema 校验：检查必填字段是否存在且类型正确
+        schema = COMMAND_PAYLOAD_SCHEMA.get((command.target, command.action))
+        if schema:
+            for field_name, expected_types in schema.items():
+                if field_name not in command.payload:
+                    return CommandResult(False, "INVALID_PAYLOAD",
+                        f"{command.target}.{command.action} 缺少必填字段 '{field_name}'")
+                if not isinstance(command.payload[field_name], expected_types):
+                    return CommandResult(False, "INVALID_PAYLOAD",
+                        f"{command.target}.{command.action} 字段 '{field_name}' 类型错误，期望 {expected_types}")
+
         if command.target == "gimbal":
             if command.action == "power_on":
                 return self.gimbal.power_on(ts)

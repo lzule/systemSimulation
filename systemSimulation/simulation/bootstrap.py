@@ -16,9 +16,11 @@ def apply_delay_profile(runtime: DigitalTwinRuntime, delay_ms: float) -> None:
     """按总延迟预算设置 Raspi 链路延时。
 
     delay_ms 作为端到端总延迟预算，按真实硬件比例分配到各阶段：
-      观测读取（并行）| 图像处理 | 命令发送
-      比例 ≈ 25%     |   50%    |   25%
-    obs 阶段取 max(image_read, state_read)，实际总延迟 ≈ delay_ms。
+      观测读取（并行执行）   | 图像处理   | 命令发送
+      image_read ∥ state_read | process   | command_tx
+      比例 ≈ 25%             |   50%     |   25%
+    obs 阶段 image_read 和 state_read 并行执行，取 max(image_read, state_read)，
+    实际端到端总延迟 ≈ max(25%, 25%) + 50% + 25% = 100% = delay_ms。
     """
     if delay_ms <= 0.0:
         return

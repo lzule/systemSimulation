@@ -70,8 +70,8 @@ class BaselineConfig:
     cam_focal_min_mm: float = 4.4
     cam_focal_max_mm: float = 200.0
     cam_boot_delay_s: float = 0.5
-    cam_beacon_sigma_px: float = 3.2
-    cam_detection_threshold: int = 180
+    cam_beacon_sigma_px: float = 6.0       # Phase 0: 3.2 → 距离相关 sigma 引入后调整为 6.0
+    cam_detection_threshold: int = 100    # Phase 0: 180 → 距离相关亮度衰减引入后调整为 100
 
     # RaspiConfig
     raspi_boot_delay_s: float = 1.0

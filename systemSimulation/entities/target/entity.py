@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from typing import Dict
@@ -25,7 +26,9 @@ class TargetState:
 
 class TargetEntity:
     def __init__(self, cfg: TargetConfig | None = None):
-        self.cfg = cfg or target_cfg
+        # 深拷贝配置，确保每个 TargetEntity 拥有独立配置副本，
+        # 避免全局 target_cfg 被原地修改后影响已有实例
+        self.cfg = copy.deepcopy(cfg or target_cfg)
         self.model = TargetKinematics3D(self.cfg)
         azimuth = math.degrees(math.atan2(self.cfg.initial_y_m, self.cfg.initial_x_m))
         horizontal_dist = math.sqrt(self.cfg.initial_x_m ** 2 + self.cfg.initial_y_m ** 2)

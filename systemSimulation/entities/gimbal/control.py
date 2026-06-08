@@ -48,6 +48,7 @@ class CascadedController2Axis:
         self._pitch_rate_i = 0.0
         self._angle_accum_s = 0.0
         self._rate_accum_s = 0.0
+        self._last_rate_cmd = {"yaw_rate_cmd_dps": 0.0, "pitch_rate_cmd_dps": 0.0}
 
     def set_mode(self, mode: str) -> None:
         if mode not in (ANGLE_MODE, RATE_MODE):
@@ -129,14 +130,12 @@ class CascadedController2Axis:
                 self._compute_outer_rate_ref(yaw_deg, pitch_deg)
                 ticks.angle_tick = True
 
-        last_cmd = {"yaw_rate_cmd_dps": 0.0, "pitch_rate_cmd_dps": 0.0}
+        last_cmd = self._last_rate_cmd
         while self._rate_accum_s >= self.rate_dt:
             self._rate_accum_s -= self.rate_dt
             last_cmd = self._compute_inner_cmd(yaw_rate_dps, pitch_rate_dps, self.rate_dt)
             ticks.rate_tick = True
-
-        if not ticks.rate_tick:
-            last_cmd = self._compute_inner_cmd(yaw_rate_dps, pitch_rate_dps, dt)
+        self._last_rate_cmd = last_cmd
 
         return {
             **last_cmd,

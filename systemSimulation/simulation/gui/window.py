@@ -15,7 +15,8 @@ from simulation.headless import apply_target_overrides
 from simulation.gui.panels import CameraPanel, WorldView
 from simulation.qt_compat import QtCore, QtGui, QtWidgets, pg
 from simulation.state_buffer import UiStateBuffer
-from simulation.types import AppConfig, COLOR, FrameSample, UI_TEXT, wrap_pm180
+from runtime.types import wrap_pm180
+from simulation.types import AppConfig, COLOR, FrameSample, UI_TEXT
 from simulation.worker import SimWorker
 
 

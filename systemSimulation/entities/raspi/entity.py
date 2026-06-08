@@ -87,7 +87,8 @@ class RaspiEntity:
                         setattr(self.delay_cfg, k, max(0.0, float(v)))
                     else:
                         setattr(self.delay_cfg, k, float(v))
-        self.delay_model = RaspiDelayModel(
+        # 更新延迟模型参数，保留当前处理中的观测
+        self.delay_model.reconfigure(
             buffer_policy=self.delay_cfg.buffer_policy,
             queue_capacity=self.delay_cfg.queue_capacity,
         )

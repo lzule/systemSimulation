@@ -64,8 +64,9 @@ def run_headless_session(cfg: AppConfig) -> None:
                 )
         return
 
-    t_end = time.time() + cfg.duration_s
-    while time.time() < t_end:
+    next_tick = time.perf_counter()
+    t_end = next_tick + cfg.duration_s
+    while next_tick < t_end:
         snapshot = runtime.step(1)
         print(
             f"\rt={snapshot.timestamp:6.2f}s yaw={snapshot.gimbal['yaw_deg_display']:7.2f} "
@@ -74,5 +75,8 @@ def run_headless_session(cfg: AppConfig) -> None:
             end="",
             flush=True,
         )
-        time.sleep(runtime.dt_s)
+        next_tick += runtime.dt_s
+        sleep_s = next_tick - time.perf_counter()
+        if sleep_s > 0:
+            time.sleep(sleep_s)
     print()

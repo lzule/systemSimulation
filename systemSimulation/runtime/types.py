@@ -35,13 +35,23 @@ ALL_COMMANDS = {
     "raspi": RASPI_COMMANDS,
 }
 
+# 命令 payload schema：定义每个需要校验的命令的必填字段及其期望类型
+COMMAND_PAYLOAD_SCHEMA: dict[tuple[str, str], dict[str, type | tuple[type, ...]]] = {
+    ("gimbal", "set_mode"): {"mode": str},
+    ("gimbal", "set_angle_target"): {"yaw": (int, float), "pitch": (int, float)},
+    ("gimbal", "set_rate_target"): {"yaw_rate": (int, float), "pitch_rate": (int, float)},
+    ("camera", "set_zoom_target_mm"): {"f_mm": (int, float)},
+    ("camera", "zoom_by"): {"delta_mm": (int, float)},
+    ("camera", "set_zoom_rate_mmps"): {"rate_mmps": (int, float)},
+}
+
 
 # === 电源状态常量 ===
 
 POWER_OFF = "OFF"
 POWER_BOOTING = "BOOTING"
 POWER_READY = "READY"
-POWER_FAULT = "FAULT"
+POWER_FAULT = "FAULT"  # 预留：故障状态（未实现触发逻辑，为未来扩展保留）
 
 
 def wrap_pm180(angle_deg: float) -> float:
