@@ -1,5 +1,34 @@
 # 修改历史
 
+## 089-20260608-151255 对照实验设计文档落地 + TODO.md 第 2 项维护
+
+**修改者**：Claude Code
+
+**目的**：响应 TODO.md 第 2 项需求 — 检查系统各实例配置独立性、设计相机帧率/树莓派图像处理延时对跟踪性能的对照实验、为每条件单独调优 Kp 并展示与系统参数的关系。
+
+**修改内容**：
+
+1. **新建详细设计文档**：`docs/todo/对照实验设计-配置独立性与参数扫描.md`
+   - 5 个 Phase 拆分（A 配置审查 / B 框架搭建 / C 帧率实验 / D 延时实验 / E Kp 趋势分析）
+   - 规划独立 `experiments/` 一级目录，建立 `common/` 共用框架 + `expNN_*/` 实验子目录的命名规范
+   - 确认关键决策：延时实验仅改 `image_process_delay_s`、Kp 调优仅针对 `TrackerTuning`、yaw/pitch 二维独立扫参、不纳入 TODO 2.c
+   - 包含涉及文件、依赖顺序、验证方案、后续扩展指引
+
+2. **更新 `docs/TODO.md` 第 2 项**：
+   - 添加文档引用 `[详细计划](todo/对照实验设计-配置独立性与参数扫描.md)`
+   - 状态标记为 🟡 已确认设计，待启动 Phase A
+   - 子项 a/b/d 分别注明对应的 `experiments/exp01_camera_fps/` 与 `experiments/exp02_raspi_process_delay/` 目录、Kp 调优方法
+
+**验证**：
+
+- 文档已写入指定路径，符合 `docs/todo/` 既有命名风格
+- TODO.md 编辑无误，未破坏其他条目
+- 实施性代码（experiments/ 目录、common/ 框架等）暂未开始，等待用户审阅文档后启动 Phase A
+
+**后续**：用户审阅 `docs/todo/对照实验设计-配置独立性与参数扫描.md` 后，按 CLAUDE.md 4.5 阶段闸门规则，进入 Phase A 配置独立性审查（只读分析，产出 `experiments/docs/配置独立性审查报告.md`）。
+
+---
+
 ## 088-20260607-221211 代码审阅报告维护：BUG修复+设计改进+测试补充
 
 **修改者**：Claude Code
