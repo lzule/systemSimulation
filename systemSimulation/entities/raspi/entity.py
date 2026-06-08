@@ -25,7 +25,8 @@ class RaspiState:
 
 class RaspiEntity:
     def __init__(self, cfg: RaspiConfig | None = None, delay_cfg: RaspiDelayConfig | None = None):
-        self.cfg = cfg or raspi_cfg
+        # 深拷贝配置，确保每个 RaspiEntity 拥有独立副本
+        self.cfg = copy.deepcopy(cfg or raspi_cfg)
         # 深拷贝，避免 set_delay_profile() 通过 setattr 污染全局单例配置
         self.delay_cfg = copy.deepcopy(delay_cfg or raspi_delay_cfg)
 

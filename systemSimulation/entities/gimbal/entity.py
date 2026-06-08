@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -43,10 +44,11 @@ class GimbalEntity:
         loop_config: LoopConfig | None = None,
         control_preset: ControlPreset | None = None,
     ):
-        self.gimbal_cfg = gimbal_config or gimbal_cfg
-        self.axis_cfg = axis_config or axis_limit_cfg
-        self.loop_cfg = loop_config or loop_cfg
-        self.control_preset = control_preset or control_preset_cfg
+        # 深拷贝所有配置，确保每个 GimbalEntity 拥有独立副本
+        self.gimbal_cfg = copy.deepcopy(gimbal_config or gimbal_cfg)
+        self.axis_cfg = copy.deepcopy(axis_config or axis_limit_cfg)
+        self.loop_cfg = copy.deepcopy(loop_config or loop_cfg)
+        self.control_preset = copy.deepcopy(control_preset or control_preset_cfg)
 
         self.power_state = POWER_OFF
         self.boot_remaining_s = 0.0
