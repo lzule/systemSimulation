@@ -201,6 +201,10 @@ class ObsFilter:
         if hasattr(frame, "image") and hasattr(frame, "intrinsics") and hasattr(frame, "optional_gt"):
             image = frame.image.copy() if isinstance(frame.image, np.ndarray) else frame.image
             intrinsics = copy.deepcopy(frame.intrinsics)
+            # 快速模式 image=None 时保留 optional_gt（作为检测结果来源），
+            # 正常模式剥离 optional_gt 防止真值泄漏
+            if image is None:
+                return replace(frame, image=image, intrinsics=intrinsics)
             return replace(frame, image=image, intrinsics=intrinsics, optional_gt=None)
         # 其它对象：保守深拷贝，避免控制程序修改污染原始数据
         return copy.deepcopy(frame)

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import copy
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
-from config import CameraConfig, camera_cfg, scene_cfg
+from config import CameraConfig, SceneConfig, camera_cfg, scene_cfg
 
 
 class CameraImagingModel:
-    def __init__(self, cfg: CameraConfig | None = None):
-        self.cfg = cfg or camera_cfg
+    def __init__(self, cfg: CameraConfig | None = None, scene_cfg_obj: Optional[SceneConfig] = None):
+        # 深拷贝配置，确保每个 CameraImagingModel 拥有独立副本
+        self.cfg = copy.deepcopy(cfg or camera_cfg)
+        self._pixel_noise_std: float = float(
+            scene_cfg_obj.pixel_noise_std if scene_cfg_obj is not None else scene_cfg.pixel_noise_std
+        )
 
     def focal_px(self, f_mm: float) -> float:
         pixel_size_mm = self.cfg.sensor_w_mm / self.cfg.resolution_w
@@ -74,6 +79,61 @@ class CameraImagingModel:
                     blob = np.outer(gy, gx)
                     frame = np.clip(blob * brightness * 255.0, 0.0, 255.0).astype(np.uint8)
 
-        noise = np.random.normal(0.0, scene_cfg.pixel_noise_std, size=frame.shape)
+        noise = np.random.normal(0.0, self._pixel_noise_std, size=frame.shape)
         frame = np.clip(frame.astype(np.float32) + noise, 0.0, 255.0).astype(np.uint8)
         return frame, in_fov, u, v, float(sigma), float(brightness)
+
+    def render_beacon_fast(self, alpha_rad: float, beta_rad: float, f_mm: float,
+                           timestamp: float, distance_m: float = 0.0) -> Tuple[None, bool, float, float, float, float]:
+        """快速成像：跳过图像生成与质心检测，直接输出带噪声的 (u, v)。
+
+        用于 Kp 参数搜索等不需要中间帧图像的场景。
+        噪声模型使用与完整渲染路径统计等价的标准差。
+        """
+        h, w = int(self.cfg.resolution_h), int(self.cfg.resolution_w)
+
+        fov_h_half = self.fov_h_half_rad(f_mm)
+        fov_v_half = self.fov_v_half_rad(f_mm)
+        in_fov = abs(alpha_rad) <= fov_h_half and abs(beta_rad) <= fov_v_half
+
+        if not in_fov:
+            return None, False, float("nan"), float("nan"), 0.0, 0.0
+
+        f_px = self.focal_px(f_mm)
+        cx = w / 2.0
+        cy = h / 2.0
+        u = f_px * math.tan(alpha_rad) + cx
+        v = cy - f_px * math.tan(beta_rad)
+
+        if not (0 <= u < w and 0 <= v < h):
+            return None, False, float("nan"), float("nan"), 0.0, 0.0
+
+        sigma = self.cfg.beacon_sigma_px
+        if self.cfg.sigma_ref_distance_m > 0.0 and distance_m > 0.0:
+            sigma = sigma / (1.0 + distance_m / self.cfg.sigma_ref_distance_m)
+
+        brightness = self.cfg.brightness_base
+        if self.cfg.brightness_ref_distance_m > 0.0 and distance_m > 0.0:
+            brightness = brightness / (1.0 + distance_m / self.cfg.brightness_ref_distance_m)
+        if self.cfg.brightness_jitter_std > 0.0:
+            brightness += np.random.normal(0.0, self.cfg.brightness_jitter_std)
+        brightness = float(np.clip(brightness, 0.0, 1.0))
+
+        # 丢检模拟
+        if self.cfg.miss_detection_base_rate > 0.0 or self.cfg.miss_sigma_gain_px > 0.0:
+            eps = 1e-8
+            miss_rate = np.clip(
+                self.cfg.miss_detection_base_rate + self.cfg.miss_sigma_gain_px / max(sigma, eps),
+                0.0, 1.0,
+            )
+            if np.random.random() < miss_rate:
+                return None, True, float("nan"), float("nan"), float(sigma), 0.0
+
+        # 质心检测噪声：高斯光斑对称，质心标准差远小于 sigma。
+        # 实测约 sigma/√N_eff ≈ 0.12px（sigma=2.67px 时）。
+        # 对 Kp 搜索影响微乎其微（0.12px vs RMS 8-40px）。
+        centroid_noise_std = max(sigma / 22.0, self._pixel_noise_std * 0.05)
+        u_noisy = u + np.random.normal(0.0, centroid_noise_std)
+        v_noisy = v + np.random.normal(0.0, centroid_noise_std)
+
+        return None, in_fov, float(u_noisy), float(v_noisy), float(sigma), float(brightness)

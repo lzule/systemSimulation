@@ -3,10 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from config import tracker_tuning_cfg
 from entities.camera.entity import detect_beacon_centroid
 from entities.gimbal.control import RATE_MODE
-from runtime.types import Command
+from runtime.types import Command, Detection
 
 
 @dataclass(frozen=True)
@@ -46,22 +45,8 @@ class BaselineTrackerProgram:
     """
 
     def __init__(self, tuning: Optional[TrackerTuning] = None):
-        if tuning is None:
-            tuning = TrackerTuning(
-                yaw_rate_kp_dps_per_px=tracker_tuning_cfg.yaw_rate_kp_dps_per_px,
-                max_yaw_rate_dps=tracker_tuning_cfg.max_yaw_rate_dps,
-                deadband_px=tracker_tuning_cfg.deadband_px,
-                lost_target_hold_rate_dps=tracker_tuning_cfg.lost_target_hold_rate_dps,
-                pitch_rate_kp_dps_per_px=tracker_tuning_cfg.pitch_rate_kp_dps_per_px,
-                max_pitch_rate_dps=tracker_tuning_cfg.max_pitch_rate_dps,
-                deadband_v_px=tracker_tuning_cfg.deadband_v_px,
-                enable_zoom_control=tracker_tuning_cfg.enable_zoom_control,
-                zoom_in_error_px=tracker_tuning_cfg.zoom_in_error_px,
-                zoom_out_error_px=tracker_tuning_cfg.zoom_out_error_px,
-                zoom_step_mm=tracker_tuning_cfg.zoom_step_mm,
-                zoom_cooldown_s=tracker_tuning_cfg.zoom_cooldown_s,
-            )
-        self.tuning = tuning
+        # 直接使用 TrackerTuning 的 dataclass 默认值，不再依赖全局 tracker_tuning_cfg
+        self.tuning = tuning if tuning is not None else TrackerTuning()
         self.last_pixel_error_x: float = 0.0
         self.last_pixel_error_y: float = 0.0
         self.last_detection_found: bool = False
@@ -118,7 +103,16 @@ class BaselineTrackerProgram:
         if frame is None:
             return commands
 
-        det = detect_beacon_centroid(frame.image)
+        # 快速模式：image=None，直接从 optional_gt 取带噪声的 (u, v)
+        if frame.image is None:
+            gt = getattr(frame, "optional_gt", None)
+            intrinsics = getattr(frame, "intrinsics", None) or {}
+            if gt and float(gt.get("in_fov", 0)):
+                det = Detection(found=True, cx=float(gt["u_px"]), cy=float(gt["v_px"]), confidence=1.0)
+            else:
+                det = Detection(found=False, confidence=0.0)
+        else:
+            det = detect_beacon_centroid(frame.image)
         self.last_detection_found = bool(det.found)
         if not det.found or det.cx is None:
             yaw_rate_cmd_dps = self.tuning.lost_target_hold_rate_dps

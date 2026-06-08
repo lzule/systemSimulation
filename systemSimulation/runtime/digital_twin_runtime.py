@@ -26,7 +26,7 @@ class _ScheduledCommand:
 
 
 class DigitalTwinRuntime:
-    def __init__(self, dt_s: Optional[float] = None, obs_filter=None):
+    def __init__(self, dt_s: Optional[float] = None, obs_filter=None, fast_camera: bool = False):
         self.dt_s = float(dt_s if dt_s is not None else scene_cfg.dt_s)
         self._time = 0.0
         self._running = False
@@ -36,7 +36,7 @@ class DigitalTwinRuntime:
 
         self.target = TargetEntity()
         self.gimbal = GimbalEntity()
-        self.camera = CameraEntity()
+        self.camera = CameraEntity(fast_mode=fast_camera)
         self.raspi = RaspiEntity()
 
         self._pending_commands: List[_ScheduledCommand] = []

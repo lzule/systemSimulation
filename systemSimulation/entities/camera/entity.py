@@ -7,7 +7,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from config import CameraConfig, camera_cfg, scene_cfg
+from config import CameraConfig, SceneConfig, camera_cfg, scene_cfg
 from entities.camera.control import ZoomController
 from entities.camera.model import CameraImagingModel
 from runtime.types import POWER_BOOTING, POWER_OFF, POWER_READY, CommandResult, Detection, FramePacket
@@ -29,9 +29,7 @@ class CameraState:
     brightness: float
 
 
-def detect_beacon_centroid(image: np.ndarray, threshold: int = None) -> Detection:
-    if threshold is None:
-        threshold = camera_cfg.detection_threshold
+def detect_beacon_centroid(image: np.ndarray, threshold: int = 100) -> Detection:
     ys, xs = np.where(image >= threshold)
     if len(xs) == 0:
         return Detection(found=False, confidence=0.0)
@@ -42,8 +40,11 @@ def detect_beacon_centroid(image: np.ndarray, threshold: int = None) -> Detectio
 
 
 class CameraEntity:
-    def __init__(self, cfg: CameraConfig | None = None):
-        self.cfg = cfg or camera_cfg
+    def __init__(self, cfg: CameraConfig | None = None, scene_cfg_obj: SceneConfig | None = None,
+                 fast_mode: bool = False):
+        # 深拷贝配置，确保每个 CameraEntity 拥有独立副本
+        self.cfg = copy.deepcopy(cfg or camera_cfg)
+        self.fast_mode = fast_mode
         self.power_state = POWER_OFF
         self.boot_delay_s = float(self.cfg.boot_delay_s)
         self.boot_remaining_s = 0.0
@@ -52,7 +53,7 @@ class CameraEntity:
         self.f_target_mm = float(self.cfg.focal_length_mm)
         self.zoom_rate_cmd_mmps = 0.0
         self.zoom_ctrl = ZoomController(tau_s=0.2, max_rate_mmps=120.0)
-        self.imaging = CameraImagingModel(self.cfg)
+        self.imaging = CameraImagingModel(self.cfg, scene_cfg_obj=scene_cfg_obj)
 
         self.frame_id = 0
         self.last_frame: Optional[FramePacket] = None
@@ -112,7 +113,9 @@ class CameraEntity:
         self.f_current_mm = self.zoom_ctrl.update(self.f_current_mm, self.f_target_mm, self.zoom_rate_cmd_mmps, dt)
         self.f_current_mm = float(np.clip(self.f_current_mm, self.cfg.focal_min_mm, self.cfg.focal_max_mm))
 
-    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray, bool, float, float, float, float]:
+    def _render_frame(self, alpha_rad: float, beta_rad: float, timestamp: float, distance_m: float = 0.0) -> Tuple[np.ndarray | None, bool, float, float, float, float]:
+        if self.fast_mode:
+            return self.imaging.render_beacon_fast(alpha_rad, beta_rad, self.f_current_mm, timestamp, distance_m)
         return self.imaging.render_beacon_frame(alpha_rad, beta_rad, self.f_current_mm, timestamp, distance_m)
 
     def update(self, dt: float, timestamp: float, target_state: Dict[str, float], gimbal_state: Dict[str, float]) -> CameraState:
@@ -222,6 +225,8 @@ class CameraEntity:
         if self.last_frame is None:
             return None
         frame = self.last_frame
+        if self.fast_mode and frame.image is None:
+            return replace(frame, intrinsics=copy.deepcopy(frame.intrinsics))
         return replace(
             frame,
             image=frame.image.copy(),

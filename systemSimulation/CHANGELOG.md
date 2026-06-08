@@ -1,5 +1,145 @@
 # 修改历史
 
+## 092-20260608-214347 Kp 参数搜索加速 — 快速相机模式 + 黄金分割搜索
+
+**修改者**：Claude Code
+
+### 修改目的
+
+对照实验（TODO 2.a/b/d）需对 9 个条件做 Kp 二维网格搜索，预估 6534 次仿真、8 并行 ~10 小时。
+从仿真引擎和搜索算法两个层面加速，使实验可在分钟级完成。
+
+### 修改内容
+
+**加速层面一：快速相机模式（~170× 加速）**
+- `entities/camera/model.py`：新增 `render_beacon_fast()`，跳过 640×480 图像生成与质心检测，直接输出带噪声坐标
+- `entities/camera/entity.py`：新增 `fast_mode` 属性，`_render_frame()` 在快速模式走轻量路径
+- `runtime/digital_twin_runtime.py`：`__init__` 新增 `fast_camera` 参数
+- `simulation/bootstrap.py`：`build_runtime()` 新增 `fast_camera` 参数
+- `entities/raspi/tracker_program.py`：`on_tick()` 支持从 `frame.optional_gt` 获取快速模式检测结果
+- `simulation/obs_filter.py`：`_copy_frame()` 在 `image=None` 时保留 `optional_gt`
+
+**加速层面二：黄金分割搜索（~96% 减少仿真次数）**
+- `tools/tune_tracker_kp.py`：重写搜索逻辑
+  - Phase 1：一维黄金分割搜索 yaw_kp（12 次评估即收敛）
+  - Phase 2：多 seed 验证最优值
+  - Phase 3：pitch_kp 敏感性检查
+
+**测试**
+- `tests/test_fast_camera_mode.py`：新建，8 个测试覆盖快速模式正确性、RMS 一致性、回归验证
+
+### 验证结果
+
+- 快速模式 vs 完整模式：RMS 偏差 0.1%（7.56 vs 7.57px）
+- 快速模式加速比：167.7×（44.21s → 0.26s / 20s 仿真）
+- 黄金分割搜索：12 次评估收敛（vs 均匀网格 121 次），总仿真次数 32（vs 726）
+- 最优 yaw_kp=1.2859，pitch_kp 不敏感（RMS 范围 0.04px）
+- 新增测试 8/8 通过
+- 全量测试通过
+- 冒烟测试通过
+
+## 091-20260608-200447 配置独立性解耦 — 实体配置 deepcopy + 全局引用消除
+
+**修改者**：Claude Code
+
+### 修改目的
+
+根据 Phase A 配置独立性审查报告中发现的问题，修复所有实体的配置隔离缺陷，
+确保每个实体实例拥有完全独立的配置副本，消除对全局单例的隐式依赖。
+为后续对照实验（exp01/exp02）的单进程串行场景扫清配置污染风险。
+
+### 修改内容
+
+1. **GimbalEntity**（`entities/gimbal/entity.py`）
+   - `__init__` 中 4 个配置参数（gimbal_cfg/axis_cfg/loop_cfg/control_preset）
+     从浅引用改为 `copy.deepcopy`，对齐 TargetEntity 的最佳实践
+   - 新增 `import copy`
+
+2. **CameraEntity**（`entities/camera/entity.py`）
+   - `__init__` 中 `self.cfg` 从浅引用改为 `copy.deepcopy`
+   - 新增 `scene_cfg_obj: SceneConfig` 构造参数，透传给 CameraImagingModel
+   - 移除未使用的 `scene_cfg` import
+
+3. **RaspiEntity**（`entities/raspi/entity.py`）
+   - `__init__` 中 `self.cfg`（RaspiConfig）从浅引用改为 `copy.deepcopy`
+   - delay_cfg 已有 deepcopy，无需修改
+
+4. **CameraImagingModel**（`entities/camera/model.py`）🚨 审查报告关键问题
+   - 新增 `scene_cfg_obj: SceneConfig` 构造参数，解耦对全局 `scene_cfg` 的外部引用
+   - `pixel_noise_std` 从直接读全局 `scene_cfg` 改为通过构造参数注入
+   - `self.cfg` 增加 `copy.deepcopy`，对齐其他实体
+   - 修复后：可通过构造参数独立控制每个实例的噪声参数
+
+5. **detect_beacon_centroid**（`entities/camera/entity.py`）
+   - `threshold` 默认值从 `None`（fallback 到 `camera_cfg.detection_threshold`）
+     改为硬编码 `100`（与 CameraConfig 默认值一致），消除全局引用
+
+6. **BaselineTrackerProgram**（`entities/raspi/tracker_program.py`）
+   - `__init__` 中 `tuning=None` fallback 从逐字段读取 `tracker_tuning_cfg` 全局变量
+     改为直接使用 `TrackerTuning()` dataclass 默认值（两者默认值完全一致）
+   - 移除 `from config import tracker_tuning_cfg` 依赖
+
+### 验证结果
+
+- 冒烟测试：`app.py --no-gui --mode offline --duration 1.0` ✅ 通过
+- 全量测试：141 tests, 0 failures, 0 errors ✅ 通过
+- 所有修改保持向后兼容（新增构造参数均有默认值，现有调用无需修改）
+
+## 090-20260608-163748 Phase A 配置独立性审查完成 + 实验目录骨架建立
+
+**修改者**：Claude Code
+
+### 修改目的
+
+对应 `docs/TODO.md` 第 2 项「系统各实例配置独立性检查与对照实验设计」，执行 Phase A：
+通过代码审读（只读，不动代码）完成全部 4 个实体的配置独立性审查，输出审查报告，
+并建立 `experiments/` 一级目录骨架，为 Phase B 共用框架搭建做准备。
+
+### 修改内容
+
+1. **实测单次仿真耗时（决策依据）**
+   - baseline (fps=60, Kp=1.1, duration=20s, 1 seed)：43.86s 平均（3 次实测）
+   - 10s vs 20s 对比：rms 偏差 33.88%，确认 duration 必须保持 20s
+   - 加速方案确定：8 进程并行，全实验 ~10 小时（Stage1 1.7h + Stage2 8.3h）
+
+2. **更新 `docs/todo/对照实验设计-配置独立性与参数扫描.md`**
+   - 新增 §12 执行细节决策记录（二阶段Kp扫参/Phase A 只读/rms 目标/exp01-02 解耦）
+   - §12.2 写入实测数据 §12.3 duration 验证结果 §12.4 最终预算表 §12.5 Phase B 并行约束
+   - 状态从"已确认设计，待启动 Phase A"改为"进行中 — Phase A 准备启动"
+
+3. **建立 `experiments/` 目录骨架**
+   - `experiments/README.md`：目录索引、命名规范、复用规范、Phase 进度
+   - `experiments/docs/`、`experiments/common/`、`experiments/exp01_camera_fps/data/report/`、`experiments/exp02_raspi_process_delay/data/report/`
+
+4. **`experiments/docs/配置独立性审查报告.md`（Phase A 核心产出）**
+   - 总体对照表：4 个实体 + 2 个模型组件的隔离等级
+   - 逐实体审查详情（含代码引用与风险评级）：
+     - TargetEntity ✅ 隔离（deepcopy）
+     - GimbalEntity ⚠️ 浅引用（不阻塞）
+     - CameraEntity ⚠️ 浅引用（不阻塞）
+     - RaspiEntity ✅/⚠️ 混合（delay_cfg 已 deepcopy）
+     - CameraImagingModel 🚨 `scene_cfg.pixel_noise_std` 外部引用（记录待解耦，exp04 前需处理）
+     - BaselineTrackerProgram ✅ 实验脚本可绕过
+   - 结论：当前耦合不影响串行控制变量实验，多进程并行天然隔离
+   - 不处理但记录的解耦项清单（含建议时机）
+
+5. **`docs/TODO.md`**
+   - 第 2 项状态改为"🟡 进行中（Phase A 已完成，输出配置独立性审查报告；待启动 Phase B）"
+
+### 验证
+
+- 实测脚本 `_smoke_bench_single.py` 和 `_smoke_duration_compare.py` 已按 CLAUDE.md §5.3 清理
+- 文档/目录结构验证：`find experiments/ -type d` 返回 8 个目录，结构完整
+- 审查报告基于真实代码 codegraph 探查（4 次 codegraph_explore + 1 次 Read），全部引用了代码行号
+
+### 不涉及
+
+- 任何 Python 源码修改（Phase A 严格只读）
+- 任何测试新增（Phase A 只产出文档）
+- `config.py` / 各 entity 源码 / runtime / bootstrap 均未触碰
+
+---
+
 ## 089-20260608-151255 对照实验设计文档落地 + TODO.md 第 2 项维护
 
 **修改者**：Claude Code
